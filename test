@@ -4,6 +4,7 @@ import base64
 import json
 import os
 import secrets
+import shlex
 import shutil
 import socket
 import subprocess
@@ -16,6 +17,7 @@ FQDN = HOSTNAME + ".example.com"
 GiB = 1024 ** 3
 
 results = []
+BSD = False
 
 
 def record(name, ok, detail=""):
@@ -56,6 +58,7 @@ class VM:
         os.makedirs(self.dir, exist_ok=True)
         self.key = key
         self.mac = mac
+        self.uuid = "5a1b2c3d-0000-4000-8000-" + mac.replace(":", "") + ""
         self.port = free_port()
         self.sock = os.path.join(self.dir, "qga.sock")
         self.proc = None
@@ -118,6 +121,7 @@ class VM:
             "-device", "scsi-hd,drive=drive0,bus=scsi0.0",
             "-drive", f"file={seed},if=none,id=cd0,media=cdrom,readonly=on",
             "-device", "ide-cd,drive=cd0",
+            "-uuid", self.uuid,
             "-netdev", f"user,id=n0,hostfwd=tcp:127.0.0.1:{self.port}-:22",
             "-device", f"virtio-net-pci,netdev=n0,mac={self.mac}",
             "-chardev", f"socket,path={self.sock},server=on,wait=off,id=qga0",
@@ -140,6 +144,8 @@ class VM:
                 "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15"]
 
     def ssh(self, command, password=None, timeout=120):
+        if BSD:
+            command = "sh -c " + shlex.quote(command)
         if password is None:
             cmd = self._ssh_base() + ["-i", self.key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "root@127.0.0.1", command]
             env = None
@@ -243,7 +249,8 @@ class VM:
 def wait_marker(vm, timeout=900):
     end = time.time() + timeout
     while time.time() < end:
-        r = vm.ssh("cat /var/lib/vmarea/first-boot-update 2>/dev/null; echo ---; systemctl is-active vmarea-first-boot-update 2>&1")
+        unit_cmd = "pgrep -f vmarea-first-boot-update >/dev/null && echo active" if BSD else "systemctl is-active vmarea-first-boot-update 2>&1"
+        r = vm.ssh("cat /var/lib/vmarea/first-boot-update 2>/dev/null; echo ---; " + unit_cmd)
         marker, _, unit = r.stdout.partition("---")
         if marker.strip():
             return marker.strip()
@@ -255,13 +262,64 @@ def wait_marker(vm, timeout=900):
 
 def shutdown(vm):
     try:
-        vm.ssh("systemctl poweroff", timeout=30)
+        vm.ssh("poweroff", timeout=30)
     except Exception:
         pass
     try:
         vm.proc.wait(60)
     except subprocess.TimeoutExpired:
         vm.kill()
+
+
+def static_checks(image):
+    import hashlib
+    with open(os.path.join(ROOT, "files", "README.txt"), "rb") as f:
+        sha = hashlib.sha256(f.read()).hexdigest()
+    script = r"""
+H='# Managed by VMArea. See /etc/vmarea/README.txt'
+sum=$(sha256sum /etc/vmarea/README.txt 2>/dev/null | cut -d' ' -f1)
+[ "$sum" = "SHA" ] || echo "readme: missing or different"
+for f in /etc/cloud/cloud.cfg.d/90-vmarea.cfg /etc/ssh/sshd_config.d/00-vmarea.conf /usr/local/sbin/vmarea-swap /usr/local/sbin/vmarea-first-boot-update /var/lib/cloud/scripts/per-once/10-vmarea-first-boot-update /etc/vmarea/image.conf; do
+  head -3 "$f" 2>/dev/null | grep -qxF "$H" || echo "header: $f"
+done
+for f in /etc/sysconfig/qemu-ga /etc/default/qemu-guest-agent /etc/dracut.conf.d/90-vmarea.conf /etc/mkinitcpio.conf.d/vmarea.conf; do
+  if [ -f "$f" ]; then head -3 "$f" | grep -qxF "$H" || echo "header: $f"; fi
+done
+ls -A /root | while read f; do
+  case "$f" in .bashrc|.bash_profile|.bash_logout|.cshrc|.tcshrc|.profile) ;; *) echo "root: $f" ;; esac
+done
+find /root /home -name '*_history' | sed 's/^/history: /'
+ls -A /home | sed 's/^/home: /'
+ls -A /tmp /var/tmp | grep -v ':$' | grep -v '^$' | sed 's/^/tmp: /'
+[ ! -s /etc/machine-id ] || echo "machine-id not empty"
+ls /etc/ssh/ssh_host_* 2>/dev/null | sed 's/^/hostkey: /'
+ls -A /var/log/journal 2>/dev/null | sed 's/^/journal: /'
+find /var/log -type f -size +0 ! -name lastlog ! -name wtmp ! -name btmp ! -name faillog | head -5 | sed 's/^/log: /'
+ls -A /var/lib/cloud | grep -vx scripts | sed 's/^/cloud-state: /'
+ls / | grep '^vmarea-' | sed 's/^/build-file: /'
+find /var/cache /var/lib/apt/lists /var/lib/pacman/sync -type f 2>/dev/null | grep -E '[.](deb|rpm)$|[.]pkg[.]tar|Packages|repomd[.]xml|[.]db$' | head -3 | sed 's/^/cache: /'
+""".replace("SHA", sha)
+    env = dict(os.environ, LIBGUESTFS_BACKEND="direct")
+    r = subprocess.run(["guestfish", "--ro", "-a", image, "-i", "sh-lines", script], capture_output=True, text=True, env=env, timeout=300)
+    if r.returncode != 0:
+        record("image_static_checks", False, r.stderr.strip()[-300:])
+        return
+    findings = [l for l in r.stdout.splitlines() if l.strip()]
+    groups = {
+        "image_vmarea_files": ("readme:", "header:"),
+        "image_no_traces": ("root:", "history:", "home:", "tmp:", "machine-id", "hostkey:", "journal:", "log:", "cloud-state:", "build-file:", "cache:"),
+    }
+    for name, prefixes in groups.items():
+        bad = [l for l in findings if l.startswith(prefixes)]
+        record(name, not bad, "; ".join(bad[:8]))
+    try:
+        with open(os.path.splitext(image)[0] + ".json") as f:
+            m = json.load(f)
+    except OSError:
+        return
+    p = m.get("pending_updates_after_build")
+    if p is not None:
+        record("manifest_no_pending_updates", p == 0, f"pending_updates_after_build={p}")
 
 
 def main():
@@ -271,6 +329,8 @@ def main():
     ap.add_argument("--keep", action="store_true", help="keep the work directory")
     ap.add_argument("--workdir", default=os.path.join(ROOT, ".testrun"))
     args = ap.parse_args()
+    global BSD
+    BSD = os.path.basename(args.image).startswith("freebsd-")
 
     work = os.path.join(os.path.abspath(args.workdir), f"{os.path.basename(args.image)}-{os.getpid()}")
     os.makedirs(work, exist_ok=True)
@@ -281,6 +341,8 @@ def main():
     a = b = None
     started = time.time()
     try:
+        if not BSD:
+            static_checks(os.path.abspath(args.image))
         a = VM("a", args.image, work, key, "52:54:00:aa:00:01")
         b = VM("b", args.image, work, key, "52:54:00:aa:00:02")
         iid_a, iid_b = secrets.token_hex(20), secrets.token_hex(20)
@@ -318,14 +380,26 @@ def main():
                 pass
 
         check("ssh_password_login", lambda: (lambda r: True if r.returncode == 0 and r.stdout.strip() == "pwok" else f"rc={r.returncode} {r.stderr.strip()}")(a.ssh("echo pwok", password=pw1)))
-        check("hostname", lambda: (lambda h: True if h == HOSTNAME else f"got {h!r}")(a.ssh("hostname").stdout.strip()))
-        check("fqdn", lambda: (lambda h: True if h == FQDN else f"got {h!r}")(a.ssh("hostname -f").stdout.strip()))
+        check("hostname", lambda: (lambda h: True if h == HOSTNAME else f"got {h!r}")(a.ssh("uname -n").stdout.strip()))
+
+        if BSD:
+            check("fqdn", lambda: True if a.ssh("grep -c " + FQDN + " /etc/hosts").stdout.strip() not in ("", "0") else "fqdn not in /etc/hosts")
+        else:
+            check("fqdn", lambda: (lambda h: True if h == FQDN else f"got {h!r}")(a.ssh("hostname -f 2>/dev/null || getent hosts $(uname -n) | head -1 | awk '{print $2}'").stdout.strip()))
 
         def disk():
-            size = int(a.ssh("df -B1 --output=size / | tail -1").stdout.strip())
+            size = int(a.ssh("df -kP / | tail -1 | awk '{print $2}'").stdout.strip()) * 1024
             return True if size > 17 * GiB else f"root fs {size / GiB:.2f} GiB"
 
         check("root_fs_grown", disk)
+
+        def net_bsd():
+            route = a.ssh("netstat -rn -f inet | grep '^default'").stdout
+            link = a.ssh("ifconfig eth0").returncode
+            if link != 0:
+                return "no interface named eth0"
+            if "eth0" not in route:
+                return f"default route: {route.strip()!r}"
 
         def net():
             link = a.ssh("ip -o link show eth0").returncode
@@ -335,7 +409,7 @@ def main():
             if "dev eth0" not in route:
                 return f"default route: {route.strip()!r}"
 
-        check("nic_eth0_default_route", net)
+        check("nic_eth0_default_route", net_bsd if BSD else net)
         check("dns_resolves", lambda: True if a.ssh("getent hosts example.com").returncode == 0 else "getent failed")
 
         def first_boot():
@@ -387,21 +461,117 @@ def main():
         check("ssh_host_keys_unique_per_instance", keys)
 
         def mid():
-            ma = a.ssh("cat /etc/machine-id").stdout.strip()
-            mb = b.ssh("cat /etc/machine-id").stdout.strip()
+            f = "/etc/hostid" if BSD else "/etc/machine-id"
+            ma = a.ssh("cat " + f).stdout.strip()
+            mb = b.ssh("cat " + f).stdout.strip()
             return True if ma and mb and ma != mb else f"machine-id a={ma!r} b={mb!r}"
 
         check("machine_id_unique_per_instance", mid)
+
+        def console_bsd():
+            g = a.ssh("grep -c '^ttyv0.*getty.*on' /etc/ttys; ps -ax | grep -c '[g]etty'").stdout.split()
+            h = a.ssh("pw usershow root | cut -d: -f2").stdout.strip()
+            if len(g) < 2 or g[0] == "0" or g[1] == "0":
+                return f"getty on ttyv0 not running: {g}"
+            if not h.startswith("$"):
+                return "root has no usable password hash"
 
         def console():
             g = a.ssh("systemctl is-active getty@tty1").stdout.strip()
             p = a.ssh("passwd -S root").stdout.split()
             if g != "active":
                 return f"getty@tty1 is {g!r}"
-            if len(p) < 2 or p[1] != "P":
+            if len(p) < 2 or p[1] not in ("P", "PS"):
                 return f"root password status {p[1:2]}"
 
-        check("console_getty_root_password", console)
+        check("console_getty_root_password", console_bsd if BSD else console)
+
+        def swap():
+            kb = int(a.ssh("awk '/^MemTotal:/ {print $2}' /proc/meminfo").stdout.strip())
+            want = 1 * GiB if kb <= 2 * 1024 * 1024 else 2 * GiB if kb <= 8 * 1024 * 1024 else 0
+            out = a.ssh("swapon --show=NAME,SIZE --noheadings --bytes").stdout.split()
+            if want == 0:
+                return True if not out else f"unexpected swap {out}"
+            if out[:1] and out[0] != "/swapfile" and int(out[1]) > 0 and a.ssh("grep -c '^/swapfile ' /etc/fstab").stdout.strip() == "0":
+                return True
+            if out[:1] != ["/swapfile"] or abs(int(out[1]) - want) > 16 * 1024 * 1024:
+                return f"swapon shows {out}, want /swapfile {want}"
+            if a.ssh("grep -c '^/swapfile ' /etc/fstab").stdout.strip() != "1":
+                return "no fstab entry"
+            if a.ssh("stat -c %a /swapfile").stdout.strip() != "600":
+                return "swapfile mode is not 600"
+
+        if not BSD:
+            check("swapfile_active", swap)
+
+        def pkgs():
+            osid = a.ssh(". /etc/os-release; echo $ID").stdout.strip()
+            cmds = ["curl", "wget", "nano", "unzip"]
+            if osid not in ("almalinux", "rocky", "centos"):
+                cmds.append("htop")
+            r = a.ssh("for c in " + " ".join(cmds) + "; do command -v $c >/dev/null || echo missing:$c; done; "
+                      "command -v vi >/dev/null || command -v vim >/dev/null || command -v vim.tiny >/dev/null || echo missing:vim; "
+                      "test -f /usr/share/bash-completion/bash_completion || echo missing:bash-completion; "
+                      "test -s /etc/ssl/certs/ca-certificates.crt -o -s /etc/pki/tls/certs/ca-bundle.crt -o -s /etc/ssl/ca-bundle.pem || echo missing:ca-certificates")
+            return True if not r.stdout.strip() else r.stdout.strip().replace(chr(10), " ")
+
+        def pkgs_bsd():
+            r = a.ssh("for c in curl nano htop bash; do command -v $c >/dev/null || echo missing:$c; done; test -s /usr/local/share/certs/ca-root-nss.crt || echo missing:ca_root_nss")
+            return True if not r.stdout.strip() else r.stdout.strip().replace(chr(10), " ")
+
+        check("extra_packages_present", pkgs_bsd if BSD else pkgs)
+
+        def firewall():
+            r = a.ssh("for u in firewalld ufw; do systemctl is-enabled $u 2>/dev/null; systemctl is-active $u 2>/dev/null; done; true").stdout.split()
+            bad = [x for x in r if x in ("enabled", "active")]
+            return True if not bad else f"firewall service state: {bad}"
+
+        def firewall_bsd():
+            r = a.ssh("sysrc -n pf_enable ipfw_enable firewall_enable 2>/dev/null; true").stdout.split()
+            return True if "YES" not in [x.upper() for x in r] else f"firewall enabled: {r}"
+
+        check("firewall_off", firewall_bsd if BSD else firewall)
+
+        def tz_locale():
+            tz = a.ssh("date +%Z").stdout.strip()
+            if BSD:
+                return True if tz == "UTC" else f"timezone {tz!r}"
+            loc = a.ssh("localectl status 2>/dev/null | grep -i 'System Locale'; cat /etc/default/locale /etc/locale.conf 2>/dev/null").stdout
+            have = a.ssh("locale -a").stdout.lower()
+            if tz != "UTC":
+                return f"timezone {tz!r}"
+            if "en_us.utf-8" not in loc.lower():
+                return f"locale config {loc!r}"
+            if "en_us.utf8" not in have and "en_us.utf-8" not in have:
+                return "en_US.UTF-8 locale not generated"
+
+        check("timezone_locale", tz_locale)
+
+        def bsd_managed_files():
+            readme = a.ssh("cat /etc/vmarea/README.txt").stdout
+            want = "These files let the control panel set your password, hostname and network, and run startup scripts. Removing or changing them can stop those features working. We cannot support servers where they were changed."
+            if want not in readme:
+                return "README.txt missing or wrong text"
+            hdr = "# Managed by VMArea. See /etc/vmarea/README.txt"
+            files = [l.strip() for l in readme.splitlines() if l.startswith("/")]
+            if "/etc/vmarea/README.txt" not in files or len(files) < 5:
+                return f"README file list incomplete: {files}"
+            bad = []
+            for f in files:
+                if f == "/etc/vmarea/README.txt":
+                    continue
+                if hdr not in a.ssh("head -3 " + f).stdout:
+                    bad.append(f)
+            if hdr not in a.ssh("head -3 /etc/ssh/sshd_config").stdout:
+                bad.append("/etc/ssh/sshd_config")
+            if bad:
+                return f"missing header: {bad}"
+            hist = a.ssh("ls -a /root | grep -E '(history|_history)$'").stdout.strip()
+            if hist:
+                return f"shell history present: {hist}"
+
+        if BSD:
+            check("vmarea_files_readme_headers_no_history", bsd_managed_files)
 
         b.kill()
         shutdown(a)
@@ -416,7 +586,7 @@ def main():
             check("reset_new_password_works", lambda: (lambda r: True if r.returncode == 0 else f"rc={r.returncode} {r.stderr.strip()}")(a.ssh("true", password=pw2)))
             check("reset_old_password_rejected", lambda: True if a.ssh("true", password=pw1).returncode != 0 else "old password still accepted")
             check("reset_host_keys_unchanged", lambda: True if a.host_keys() == keys_a["a"] else "host keys changed after reset")
-            check("reset_hostname_unchanged", lambda: (lambda h: True if h == HOSTNAME else f"got {h!r}")(a.ssh("hostname").stdout.strip()))
+            check("reset_hostname_unchanged", lambda: (lambda h: True if h == HOSTNAME else f"got {h!r}")(a.ssh("uname -n").stdout.strip()))
     finally:
         for vm in (a, b):
             if vm:
