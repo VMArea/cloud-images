@@ -19,8 +19,9 @@ while read -r manifest; do
   syft scan "dir:$mnt" --source-name "$name" -o "spdx-json=$base.spdx.json" -q
   guestunmount "$mnt"
   grype "sbom:$base.spdx.json" -o json -q > "$base.vulns.json"
-  jq '[.matches[].vulnerability.severity] | group_by(.) | map({key: .[0], value: length}) | from_entries
-      | {Critical: (.Critical // 0), High: (.High // 0), Medium: (.Medium // 0), Low: (.Low // 0), Negligible: (.Negligible // 0), Unknown: (.Unknown // 0)}' \
-    "$base.vulns.json" > "$base.vulns-summary.json"
+  grype "sbom:$base.spdx.json" --only-fixed -o json -q > "$base.vulns-fixable.json"
+  counts='[.matches[].vulnerability.severity] | group_by(.) | map({key: .[0], value: length}) | from_entries | {Critical: (.Critical // 0), High: (.High // 0), Medium: (.Medium // 0), Low: (.Low // 0), Negligible: (.Negligible // 0), Unknown: (.Unknown // 0)}'
+  jq -n --argjson fixable "$(jq "$counts" "$base.vulns-fixable.json")" --argjson total "$(jq "$counts" "$base.vulns.json")" --arg distro "$(jq -r '.distro.name + " " + .distro.version' "$base.vulns.json")" '{distro: $distro, fixable: $fixable, total: $total}' > "$base.vulns-summary.json"
+  rm -f "$base.vulns-fixable.json"
   echo "  $(jq -c . "$base.vulns-summary.json")"
 done < <(selected_manifests "$out")
