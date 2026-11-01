@@ -1,0 +1,25 @@
+#!/bin/sh
+. /etc/vmarea/image.conf
+LOG=/var/log/vmarea-first-boot-update.log
+exec >>"$LOG" 2>&1
+export PAGER=cat ASSUME_ALWAYS_YES=yes
+rc=0
+n=0
+if ! pkg info -e FreeBSD-runtime; then
+    until freebsd-update --not-running-from-cron fetch; do
+        n=$((n + 1))
+        [ "$n" -ge 20 ] && rc=1 && break
+        sleep 5
+    done
+    freebsd-update --not-running-from-cron install
+    r=$?
+    [ "$r" -ne 0 ] && [ "$r" -ne 2 ] && rc=1
+fi
+n=0
+until pkg upgrade -y; do
+    n=$((n + 1))
+    [ "$n" -ge 20 ] && rc=1 && break
+    sleep 5
+done
+mkdir -p /var/lib/vmarea
+echo "$FIRST_BOOT_UPDATE $rc $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /var/lib/vmarea/first-boot-update

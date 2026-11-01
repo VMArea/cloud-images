@@ -1,0 +1,2 @@
+#!/bin/sh
+daemon -f /usr/local/sbin/vmarea-first-boot-update

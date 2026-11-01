@@ -1,0 +1,167 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import secrets
+import shutil
+import socket
+import subprocess
+import sys
+import time
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+
+
+def log(msg):
+    print(f"[build-bsd] {msg}", flush=True)
+
+
+def die(msg):
+    print(f"[build-bsd] error: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def free_port():
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+class Guest:
+    def __init__(self, disk, work):
+        self.work = work
+        self.disk = disk
+        self.port = free_port()
+        self.key = os.path.join(work, "id_ed25519")
+        subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", self.key], check=True)
+        self.pub = open(self.key + ".pub").read().strip()
+        self.proc = None
+
+    def seed(self):
+        ud = [
+            "#cloud-config",
+            "ssh_authorized_keys:",
+            f"  - {json.dumps(self.pub)}",
+            "runcmd:",
+            "  - mkdir -p /root/.ssh",
+            f"  - echo {json.dumps(self.pub)} > /root/.ssh/authorized_keys",
+            "  - chmod 700 /root/.ssh",
+            "  - chmod 600 /root/.ssh/authorized_keys",
+            "  - printf 'PermitRootLogin prohibit-password\\n' | cat - /etc/ssh/sshd_config > /etc/ssh/sshd_config.new",
+            "  - mv /etc/ssh/sshd_config.new /etc/ssh/sshd_config",
+            "  - service sshd restart",
+        ]
+        with open(os.path.join(self.work, "user-data"), "w") as f:
+            f.write("\n".join(ud) + "\n")
+        with open(os.path.join(self.work, "meta-data"), "w") as f:
+            f.write(f"instance-id: build-{secrets.token_hex(8)}\nlocal-hostname: vmarea-build\n")
+        iso = os.path.join(self.work, "seed.iso")
+        subprocess.run(
+            ["cloud-localds", iso, os.path.join(self.work, "user-data"), os.path.join(self.work, "meta-data")],
+            check=True,
+        )
+        return iso
+
+    def start(self):
+        cmd = [
+            "qemu-system-x86_64", "-enable-kvm", "-cpu", "host", "-smp", "4", "-m", "2048",
+            "-display", "none", "-vga", "std",
+            "-serial", f"file:{self.work}/console.log",
+            "-device", "virtio-scsi-pci,id=scsi0",
+            "-drive", f"file={self.disk},if=none,id=drive0,format=qcow2,discard=unmap",
+            "-device", "scsi-hd,drive=drive0,bus=scsi0.0",
+            "-drive", f"file={self.seed()},if=none,id=cd0,media=cdrom,readonly=on",
+            "-device", "ide-cd,drive=cd0",
+            "-netdev", f"user,id=n0,hostfwd=tcp:127.0.0.1:{self.port}-:22",
+            "-device", "virtio-net-pci,netdev=n0",
+        ]
+        self.proc = subprocess.Popen(cmd, stdout=open(f"{self.work}/qemu.log", "ab"), stderr=subprocess.STDOUT)
+
+    def ssh_cmd(self):
+        return ["ssh", "-p", str(self.port), "-i", self.key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes",
+                "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null", "-o", "LogLevel=ERROR",
+                "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15", "root@127.0.0.1"]
+
+    def ssh(self, command, timeout=1800, check=True):
+        r = subprocess.run(self.ssh_cmd() + [command], capture_output=True, text=True, timeout=timeout)
+        if check and r.returncode != 0:
+            die(f"guest command failed ({r.returncode}): {command}\n{r.stdout}\n{r.stderr}")
+        return r
+
+    def put(self, local, remote, mode="0644"):
+        with open(local, "rb") as f:
+            r = subprocess.run(self.ssh_cmd() + [f"cat > {remote} && chmod {mode} {remote}"], stdin=f, capture_output=True)
+        if r.returncode != 0:
+            die(f"upload to {remote} failed: {r.stderr.decode()}")
+
+    def wait_ssh(self, timeout=600):
+        end = time.time() + timeout
+        while time.time() < end:
+            if self.proc.poll() is not None:
+                die("qemu exited before ssh came up")
+            try:
+                if self.ssh("true", timeout=30, check=False).returncode == 0:
+                    return
+            except subprocess.TimeoutExpired:
+                pass
+            time.sleep(5)
+        die("ssh did not come up in the build guest")
+
+    def wait_exit(self, timeout=300):
+        try:
+            self.proc.wait(timeout)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
+
+    def kill(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.kill()
+            self.proc.wait()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("source")
+    ap.add_argument("output")
+    ap.add_argument("workdir")
+    ap.add_argument("pkglist")
+    ap.add_argument("--mode", required=True)
+    args = ap.parse_args()
+
+    disk = os.path.join(args.workdir, "image.qcow2")
+    subprocess.run(["qemu-img", "convert", "-O", "qcow2", args.source, disk], check=True)
+    g = Guest(disk, args.workdir)
+    try:
+        log("booting the stock image with a build seed")
+        g.start()
+        g.wait_ssh()
+        log("customising inside the guest")
+        g.ssh("mkdir -p /etc/vmarea /usr/local/etc/cloud/cloud.cfg.d")
+        g.put(f"{ROOT}/files/90-vmarea.cfg", "/usr/local/etc/cloud/cloud.cfg.d/90-vmarea.cfg")
+        g.put(f"{ROOT}/files/first-boot-update-pkg", "/usr/local/sbin/vmarea-first-boot-update", "0755")
+        g.put(f"{ROOT}/files/per-once-wrapper-bsd", "/tmp/per-once-wrapper", "0755")
+        g.put(f"{ROOT}/files/customize-freebsd.sh", "/tmp/customize.sh", "0755")
+        r = g.ssh(f"FIRST_BOOT_UPDATE={args.mode} sh /tmp/customize.sh", check=False)
+        sys.stdout.write(r.stdout)
+        if r.returncode != 0:
+            die(f"customisation failed ({r.returncode}):\n{r.stderr}")
+        pk = g.ssh("cat /var/vmarea-pkglist").stdout
+        with open(args.pkglist, "w") as f:
+            f.write(pk)
+        g.ssh("rm -f /var/vmarea-pkglist")
+        g.put(f"{ROOT}/files/finalize-freebsd.sh", "/tmp/finalize.sh", "0755")
+        g.ssh("sh /tmp/finalize.sh", check=False)
+        g.wait_exit()
+    finally:
+        g.kill()
+    log("compressing")
+    tmp = args.output + ".part"
+    subprocess.run(["qemu-img", "convert", "-c", "-O", "qcow2", disk, tmp], check=True)
+    os.replace(tmp, args.output)
+
+
+if __name__ == "__main__":
+    main()

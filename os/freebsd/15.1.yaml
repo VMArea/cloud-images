@@ -1,0 +1,13 @@
+name: freebsd
+version: "15.1"
+arch: amd64
+package_manager: pkg
+first_boot_update: security
+source:
+  url: https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/amd64/Latest/FreeBSD-15.1-RELEASE-amd64-BASIC-CLOUDINIT-ufs.qcow2.xz
+checksum:
+  url: https://download.freebsd.org/releases/VM-IMAGES/15.1-RELEASE/amd64/Latest/CHECKSUM.SHA256
+  algo: sha256
+eol:
+  product: freebsd
+  cycle: "15.1"
