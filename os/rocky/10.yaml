@@ -1,0 +1,19 @@
+name: rocky
+version: "10"
+arch: amd64
+package_manager: dnf
+first_boot_update: security
+selinux_relabel: true
+source:
+  url: https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2
+checksum:
+  url: https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2.CHECKSUM
+  algo: sha256
+signature:
+  url: https://dl.rockylinux.org/pub/rocky/10/images/x86_64/Rocky-10-GenericCloud-Base.latest.x86_64.qcow2.CHECKSUM.asc
+  kind: detached
+  key: keys/rocky-10.asc
+  fingerprint: FC226859C0860BF0DDB95B085B106C736FEDFC85
+eol:
+  product: rocky-linux
+  cycle: "10"

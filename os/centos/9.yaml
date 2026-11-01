@@ -1,0 +1,14 @@
+name: centos-stream
+version: "9"
+arch: amd64
+package_manager: dnf
+first_boot_update: security
+selinux_relabel: true
+source:
+  url: https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2
+checksum:
+  url: https://cloud.centos.org/centos/9-stream/x86_64/images/CentOS-Stream-GenericCloud-9-latest.x86_64.qcow2.SHA256SUM
+  algo: sha256
+eol:
+  product: centos-stream
+  cycle: "9"

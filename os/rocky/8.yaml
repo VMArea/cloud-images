@@ -1,0 +1,14 @@
+name: rocky
+version: "8"
+arch: amd64
+package_manager: dnf
+first_boot_update: security
+selinux_relabel: true
+source:
+  url: https://dl.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud-Base.latest.x86_64.qcow2
+checksum:
+  url: https://dl.rockylinux.org/pub/rocky/8/images/x86_64/Rocky-8-GenericCloud-Base.latest.x86_64.qcow2.CHECKSUM
+  algo: sha256
+eol:
+  product: rocky-linux
+  cycle: "8"

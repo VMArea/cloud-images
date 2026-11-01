@@ -1,0 +1,19 @@
+name: almalinux
+version: "9"
+arch: amd64
+package_manager: dnf
+first_boot_update: security
+selinux_relabel: true
+source:
+  url: https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/AlmaLinux-9-GenericCloud-latest.x86_64.qcow2
+checksum:
+  url: https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/CHECKSUM
+  algo: sha256
+signature:
+  url: https://repo.almalinux.org/almalinux/9/cloud/x86_64/images/CHECKSUM.asc
+  kind: detached
+  key: keys/almalinux-9.asc
+  fingerprint: BF18AC2876178908D6E71267D36CB86CB86B3716
+eol:
+  product: almalinux
+  cycle: "9"

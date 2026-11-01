@@ -1,0 +1,19 @@
+name: rocky
+version: "9"
+arch: amd64
+package_manager: dnf
+first_boot_update: security
+selinux_relabel: true
+source:
+  url: https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2
+checksum:
+  url: https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2.CHECKSUM
+  algo: sha256
+signature:
+  url: https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2.CHECKSUM.asc
+  kind: detached
+  key: keys/rocky-9.asc
+  fingerprint: 21CB256AE16FC54C6E652949702D426D350D275D
+eol:
+  product: rocky-linux
+  cycle: "9"

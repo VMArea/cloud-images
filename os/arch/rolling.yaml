@@ -1,0 +1,16 @@
+name: arch
+version: "rolling"
+arch: amd64
+package_manager: pacman
+first_boot_update: full
+source:
+  url: https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2
+checksum:
+  url: https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2.SHA256
+  algo: sha256
+signature:
+  url: https://geo.mirror.pkgbuild.com/images/latest/Arch-Linux-x86_64-cloudimg.qcow2.sig
+  kind: detached
+  target: image
+  key: keys/arch-boxes.asc
+  fingerprint: 1B9A16984A4E8CB448712D2AE0B78BF4326C6F8F

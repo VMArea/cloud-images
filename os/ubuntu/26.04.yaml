@@ -1,0 +1,21 @@
+name: ubuntu
+version: "26.04"
+arch: amd64
+package_manager: apt
+first_boot_update: security
+source:
+  url: https://cloud-images.ubuntu.com/resolute/current/resolute-server-cloudimg-amd64.img
+checksum:
+  url: https://cloud-images.ubuntu.com/resolute/current/SHA256SUMS
+  algo: sha256
+signature:
+  url: https://cloud-images.ubuntu.com/resolute/current/SHA256SUMS.gpg
+  keyring: /usr/share/keyrings/ubuntu-cloudimage-keyring.gpg
+eol:
+  product: ubuntu
+  cycle: "26.04"
+kernel_args: net.ifnames=0
+grow:
+  partition: /dev/sda1
+  size: 6G
+  method: in-place

@@ -1,0 +1,19 @@
+name: almalinux
+version: "8"
+arch: amd64
+package_manager: dnf
+first_boot_update: security
+selinux_relabel: true
+source:
+  url: https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/AlmaLinux-8-GenericCloud-latest.x86_64.qcow2
+checksum:
+  url: https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/CHECKSUM
+  algo: sha256
+signature:
+  url: https://repo.almalinux.org/almalinux/8/cloud/x86_64/images/CHECKSUM.asc
+  kind: detached
+  key: keys/almalinux-8.asc
+  fingerprint: BC5EDDCADF502C077F1582882AE81E8ACED7258B
+eol:
+  product: almalinux
+  cycle: "8"

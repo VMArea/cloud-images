@@ -1,0 +1,19 @@
+name: fedora
+version: "44"
+arch: amd64
+package_manager: dnf
+first_boot_update: full
+selinux_relabel: true
+source:
+  url: https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2
+checksum:
+  url: https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-44-1.7-x86_64-CHECKSUM
+  algo: sha256
+signature:
+  url: https://download.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/Fedora-Cloud-44-1.7-x86_64-CHECKSUM
+  kind: clearsign
+  key: keys/fedora-44.asc
+  fingerprint: 36F612DCF27F7D1A48A835E4DBFCF71C6D9F90A6
+eol:
+  product: fedora
+  cycle: "44"

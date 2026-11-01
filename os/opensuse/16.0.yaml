@@ -1,0 +1,22 @@
+name: opensuse-leap
+version: "16.0"
+arch: amd64
+package_manager: zypper
+first_boot_update: security
+selinux_relabel: true
+source:
+  url: https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2
+checksum:
+  url: https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2.sha256
+  algo: sha256
+signature:
+  url: https://download.opensuse.org/distribution/leap/16.0/appliances/Leap-16.0-Minimal-VM.x86_64-Cloud.qcow2.sha256.asc
+  kind: detached
+  key: keys/opensuse.gpg
+  fingerprint: AD485664E901B867051AB15F35A2F86E29B700A4
+eol:
+  product: opensuse
+  cycle: "16.0"
+grow:
+  partition: /dev/sda3
+  size: 6G

@@ -1,0 +1,13 @@
+name: debian
+version: "12"
+arch: amd64
+package_manager: apt
+first_boot_update: security
+source:
+  url: https://cloud.debian.org/images/cloud/bookworm/latest/debian-12-genericcloud-amd64.qcow2
+checksum:
+  url: https://cloud.debian.org/images/cloud/bookworm/latest/SHA512SUMS
+  algo: sha512
+eol:
+  product: debian
+  cycle: "12"

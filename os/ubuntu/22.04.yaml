@@ -1,0 +1,20 @@
+name: ubuntu
+version: "22.04"
+arch: amd64
+package_manager: apt
+first_boot_update: security
+source:
+  url: https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img
+checksum:
+  url: https://cloud-images.ubuntu.com/jammy/current/SHA256SUMS
+  algo: sha256
+signature:
+  url: https://cloud-images.ubuntu.com/jammy/current/SHA256SUMS.gpg
+  keyring: /usr/share/keyrings/ubuntu-cloudimage-keyring.gpg
+eol:
+  product: ubuntu
+  cycle: "22.04"
+grow:
+  partition: /dev/sda1
+  size: 4G
+  method: in-place
