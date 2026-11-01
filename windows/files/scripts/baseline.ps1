@@ -45,9 +45,11 @@ Set-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection
 Set-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection' DisableIOAVProtection 1
 try { Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction Stop } catch { Write-Output "Set-MpPreference: $($_.Exception.Message)" }
 Disable-NetAdapterPowerManagement -Name * -ErrorAction SilentlyContinue
-Write-Output 'baseline applied'
+
 $setup = Get-ItemProperty 'HKLM:\SYSTEM\Setup' -ErrorAction SilentlyContinue
 if ($setup.OOBEInProgress -eq 0 -and $setup.SystemSetupInProgress -eq 0) {
     Remove-Item 'C:\Windows\Panther\unattend.xml', 'C:\Windows\System32\Sysprep\Unattend.xml', 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init\conf\Unattend.xml' -Force -ErrorAction SilentlyContinue
     Remove-Item 'C:\Windows\Panther\Unattend' -Recurse -Force -ErrorAction SilentlyContinue
 }
+Write-Output 'baseline applied'
+exit 0

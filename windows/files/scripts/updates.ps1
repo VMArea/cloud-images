@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $root = Get-PSDrive -PSProvider FileSystem | ForEach-Object { $_.Root } | Where-Object { Test-Path ($_ + 'updates\updates.json') } | Select-Object -First 1
-$list = @(Get-Content "${root}updates\updates.json" -Raw | ConvertFrom-Json)
+$list = Get-Content "${root}updates\updates.json" -Raw | ConvertFrom-Json
 $out = @()
 foreach ($u in $list) {
     $f = Join-Path "${root}updates" $u.file

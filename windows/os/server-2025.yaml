@@ -9,6 +9,7 @@ driver_dir: 2k25
 tpm: true
 secureboot: false
 cpu: x86-64-v3
+build_cpu: host
 disk_gb: 40
 ram_mb: 6144
 eol:

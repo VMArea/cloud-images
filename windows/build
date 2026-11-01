@@ -281,7 +281,7 @@ def main():
             json.dump(state, f)
 
     cdroms = [build_iso, virtio_iso] if done("install") else [win_iso, build_iso, virtio_iso]
-    vm = VM(work, disk, name="build", ram=a.ram or r["ram_mb"], cpus=4, cpu=r["cpu"], tpm=r["tpm"], secureboot=r["secureboot"],
+    vm = VM(work, disk, name="build", ram=a.ram or r["ram_mb"], cpus=4, cpu=r.get("build_cpu", r["cpu"]), tpm=r["tpm"], secureboot=r["secureboot"],
             cdroms=cdroms, fresh_vars=not a.resume)
     try:
         vm.start()
@@ -328,7 +328,7 @@ $o = [ordered]@{
   hotfixes = @(Get-HotFix | Select-Object -ExpandProperty HotFixID)
   drivers = @(Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.Manufacturer -match 'Red Hat' } | ForEach-Object { "$($_.DeviceName) $($_.DriverVersion)" } | Sort-Object -Unique)
   qemu_ga = (Get-CimInstance Win32_Product -Filter "Name like 'QEMU Guest Agent%'" | Select-Object -First 1 -ExpandProperty Version)
-  cloudbase_init = (Get-ItemProperty 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init\Python\Scripts\cloudbase-init.exe').VersionInfo.ProductVersion
+  cloudbase_init = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*' | Where-Object { $_.DisplayName -like 'Cloudbase-Init*' } | Select-Object -First 1 -ExpandProperty DisplayVersion)
   partitions = @(Get-Partition -DiskNumber 0 | ForEach-Object { "$($_.PartitionNumber):$($_.Type):$($_.Size)" })
 }
 $o | ConvertTo-Json -Compress
