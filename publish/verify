@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+dir=${1:?usage: verify <download-dir> [cosign.pub]}
+pub=${2:-cosign.pub}
+cd "$dir"
+cosign verify-blob --key "$pub" --bundle SHA256SUMS.sig --insecure-ignore-tlog SHA256SUMS
+sha256sum --ignore-missing -c SHA256SUMS
