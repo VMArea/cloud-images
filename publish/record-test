@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+img=${1:?usage: record-test <image.qcow2> pass|fail [note]}
+res=${2:?usage: record-test <image.qcow2> pass|fail [note]}
+case $res in pass|fail) ;; *) echo "result must be pass or fail" >&2; exit 1;; esac
+python3 - "${img%.qcow2}.test.json" "$res" "${3:-}" <<'PY'
+import json, sys, datetime
+dest, res, note = sys.argv[1:4]
+json.dump({"result": res, "tested_at": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), "note": note}, open(dest, "w"), indent=2)
+PY

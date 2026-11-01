@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+. "$(dirname "$0")/lib.sh"
+need jq python3
+out=
+stage=
+prev=
+up=()
+while [ $# -gt 0 ]; do
+  case $1 in
+    --stage) stage=$2; shift ;;
+    --prev-dir) prev=$2; shift ;;
+    --upload) up=(--dry-run) ;;
+    --yes) up=(--yes) ;;
+    -*) die "unknown option $1" ;;
+    *) out=$1 ;;
+  esac
+  shift
+done
+[ -d "${out:-}" ] && [ -n "$stage" ] || die "usage: release <output-dir> --stage <dir> [--prev-dir DIR] [--upload] [--yes]"
+
+"$HERE/changes" "$out" ${prev:+--prev-dir "$prev"}
+"$HERE/sbom" "$out"
+
+mkdir -p "$stage"
+while read -r m; do
+  [ -n "$m" ] || continue
+  osn=$(jq -r .name "$m")
+  ver=$(jq -r .version "$m")
+  file=$(jq -r .file "$m")
+  stem=${file%.qcow2}
+  date=${stem##*-}
+  testres=$(jq -r '.result // "none"' "$out/$stem.test.json" 2>/dev/null || echo none)
+  [ "$testres" = pass ] || die "$stem has no passing test result ($testres); run ./test then publish/record-test"
+  d=$stage/$osn/$ver/$date
+  mkdir -p "$d"
+  for f in "$stem.qcow2" "$stem.json" "$stem.test.json" "$stem.spdx.json" "$stem.vulns.json" "$stem.vulns-summary.json" "$stem.changes.txt"; do
+    [ -e "$d/$f" ] || ln -L "$out/$f" "$d/$f" 2>/dev/null || cp -L "$out/$f" "$d/$f"
+  done
+  "$HERE/sign" "$d"
+done < <(selected_manifests "$out")
+
+python3 "$HERE/status" "$stage"
+if [ ${#up[@]} -gt 0 ]; then "$HERE/upload" "$stage" "${up[@]}"; fi

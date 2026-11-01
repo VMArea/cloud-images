@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+set -euo pipefail
+. "$(dirname "$0")/lib.sh"
+need rclone python3
+KEEP=3
+DRY=1
+stage=
+for a in "$@"; do
+  case $a in
+    --dry-run) DRY=1 ;;
+    --yes) DRY=0 ;;
+    -*) die "unknown option $a (usage: upload <stage-dir> [--dry-run|--yes])" ;;
+    *) stage=$a ;;
+  esac
+done
+[ -d "${stage:-}" ] || die "usage: upload <stage-dir> [--dry-run|--yes]"
+
+have_creds=1
+for v in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET; do
+  [ -n "${!v:-}" ] || have_creds=0
+done
+if [ "$DRY" = 0 ] && [ "$have_creds" = 0 ]; then
+  die "R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET are required for --yes"
+fi
+if [ "$have_creds" = 1 ]; then
+  export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare
+  export RCLONE_CONFIG_R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY
+  export RCLONE_CONFIG_R2_ENDPOINT="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
+  export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
+fi
+dest=r2:${R2_BUCKET:-BUCKET}
+flag=()
+if [ "$DRY" = 1 ]; then
+  flag=(--dry-run)
+  echo "dry run: nothing is uploaded (pass --yes to upload)"
+fi
+
+run() {
+  if [ "$have_creds" = 1 ]; then
+    rclone "$@" "${flag[@]}"
+  else
+    echo "would run: rclone $*"
+  fi
+}
+
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+for vdir in "$stage"/*/*/; do
+  [ -d "$vdir" ] || continue
+  ver=$(basename "$vdir")
+  osn=$(basename "$(dirname "$vdir")")
+  mapfile -t dates < <(find "$vdir" -mindepth 1 -maxdepth 1 -type d -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' -printf '%f\n' | sort)
+  [ "${#dates[@]}" -gt 0 ] || continue
+  for d in "${dates[@]}"; do
+    [ -f "$vdir$d/SHA256SUMS.sig" ] || die "$osn/$ver/$d is not signed"
+    run copy "$vdir$d" "$dest/$osn/$ver/$d" --checksum
+  done
+  latest=${dates[-1]}
+  python3 - "$work/latest.json" "$osn" "$ver" "$latest" "$vdir$latest" <<'PY'
+import json, os, sys
+dest, osn, ver, date, d = sys.argv[1:6]
+json.dump({"os": osn, "version": ver, "date": date, "path": f"{osn}/{ver}/{date}/", "files": sorted(os.listdir(d))}, open(dest, "w"), indent=2)
+PY
+  run copyto "$work/latest.json" "$dest/$osn/$ver/latest.json"
+  if [ "$have_creds" = 1 ]; then
+    mapfile -t remote < <(rclone lsf --dirs-only "$dest/$osn/$ver/" | tr -d / | grep -E '^[0-9]{8}$' | sort || true)
+    drop=$(( ${#remote[@]} - KEEP ))
+    for ((i = 0; i < drop; i++)); do
+      echo "retention: removing ${remote[i]} from $osn/$ver"
+      rclone purge "$dest/$osn/$ver/${remote[i]}" "${flag[@]}"
+    done
+  else
+    echo "would prune $osn/$ver to the newest $KEEP dated builds"
+  fi
+done
+run copyto "$stage/index.html" "$dest/index.html"
+run copyto "$stage/index.json" "$dest/index.json"
