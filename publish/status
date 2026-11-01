@@ -1,0 +1,157 @@
+#!/usr/bin/env python3
+import datetime
+import html
+import json
+import os
+import re
+import sys
+
+SEV = ["Critical", "High", "Medium", "Low"]
+
+
+def load(p):
+    try:
+        with open(p) as f:
+            return json.load(f)
+    except OSError:
+        return None
+
+
+def collect(root):
+    rows = []
+    for osn in sorted(os.listdir(root)):
+        odir = os.path.join(root, osn)
+        if not os.path.isdir(odir):
+            continue
+        for ver in sorted(os.listdir(odir)):
+            vdir = os.path.join(odir, ver)
+            if not os.path.isdir(vdir):
+                continue
+            dates = sorted(d for d in os.listdir(vdir) if re.fullmatch(r"\d{8}", d))
+            if not dates:
+                continue
+            date = dates[-1]
+            d = os.path.join(vdir, date)
+            stem = f"{osn}-{ver}-{date}"
+            man = load(os.path.join(d, stem + ".json")) or {}
+            test = load(os.path.join(d, stem + ".test.json")) or {}
+            vul = load(os.path.join(d, stem + ".vulns-summary.json"))
+            rel = f"{osn}/{ver}/{date}/"
+
+            def link(suffix):
+                return rel + stem + suffix if os.path.exists(os.path.join(d, stem + suffix)) else None
+
+            rows.append({
+                "os": osn,
+                "version": ver,
+                "build_date": man.get("build_date") or f"{date[:4]}-{date[4:6]}-{date[6:]}",
+                "date": date,
+                "file": stem + ".qcow2",
+                "size_bytes": man.get("size_bytes"),
+                "sha256": man.get("sha256"),
+                "test": test.get("result", "not run"),
+                "vulnerabilities": vul,
+                "links": {
+                    "download": rel + stem + ".qcow2",
+                    "sbom": link(".spdx.json"),
+                    "vulnerabilities": link(".vulns.json"),
+                    "changes": link(".changes.txt"),
+                    "checksums": rel + "SHA256SUMS",
+                    "signature": rel + "SHA256SUMS.sig",
+                },
+            })
+    return rows
+
+
+def size(n):
+    if not n:
+        return ""
+    return f"{n / 1048576:.0f} MiB" if n < 1 << 30 else f"{n / (1 << 30):.2f} GiB"
+
+
+CSS = """
+:root{color-scheme:light dark;--bg:#fff;--fg:#1a1f1c;--mut:#5a645e;--line:#d9dfdb;--acc:#0f5132;--ok:#0f5132;--bad:#a4261c}
+@media (prefers-color-scheme:dark){:root{--bg:#101412;--fg:#e6ebe7;--mut:#9aa59e;--line:#2a322d;--acc:#5fbf8a;--ok:#5fbf8a;--bad:#ff8a80}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{border-bottom:3px solid var(--acc);padding:1rem 1.25rem}
+.wm{font-weight:700;font-size:1.25rem;letter-spacing:.01em;color:var(--acc)}
+main{padding:1.25rem;max-width:80rem;margin:0 auto}
+h1{font-size:1.25rem;margin:0 0 .25rem}
+p{color:var(--mut);margin:.25rem 0 1rem}
+a{color:var(--acc)}
+a:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+.wrap{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+caption{position:absolute;left:-9999px}
+th,td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-weight:600;white-space:nowrap}
+td.n{text-align:right;font-variant-numeric:tabular-nums}
+code{font:.8rem ui-monospace,Menlo,Consolas,monospace;word-break:break-all}
+.pass{color:var(--ok);font-weight:600}
+.fail{color:var(--bad);font-weight:600}
+ul.l{list-style:none;margin:0;padding:0;display:flex;gap:.75rem;flex-wrap:wrap}
+footer{padding:1.25rem;max-width:80rem;margin:0 auto;color:var(--mut);font-size:.85rem}
+"""
+
+
+def render(rows, generated):
+    e = html.escape
+    heads = ["OS", "Version", "Build date", "Size", "SHA-256", "Test"] + SEV + ["Files"]
+    out = [
+        "<!doctype html>",
+        '<html lang="en"><head><meta charset="utf-8">',
+        '<meta name="viewport" content="width=device-width,initial-scale=1">',
+        "<title>VMArea cloud images</title>",
+        f"<style>{CSS}</style></head><body>",
+        '<header><span class="wm">VMArea</span></header><main>',
+        "<h1>Cloud images</h1>",
+        f"<p>Latest build per release. Generated {e(generated)}. Verify downloads with SHA256SUMS and SHA256SUMS.sig.</p>",
+        '<div class="wrap"><table><caption>Latest cloud images</caption><thead><tr>',
+        "".join(f'<th scope="col">{h}</th>' for h in heads),
+        "</tr></thead><tbody>",
+    ]
+    for r in rows:
+        v = r["vulnerabilities"]
+        cls = "pass" if r["test"] == "pass" else "fail" if r["test"] == "fail" else ""
+        cells = [
+            (e(r["os"]), ""),
+            (e(r["version"]), ""),
+            (e(r["build_date"][:10]), ""),
+            (e(size(r["size_bytes"])), ""),
+            (f"<code>{e(r['sha256'] or '')}</code>", ""),
+            (f'<span class="{cls}">{e(r["test"])}</span>', ""),
+        ]
+        for s in SEV:
+            cells.append((str(v[s]) if v else "n/a", "n"))
+        L = r["links"]
+        items = [f'<li><a href="{e(L["download"])}">Image</a></li>']
+        for k, label in [("sbom", "SBOM"), ("vulnerabilities", "Vulnerabilities"), ("changes", "Changes"), ("checksums", "SHA256SUMS"), ("signature", "Signature")]:
+            if L[k]:
+                items.append(f'<li><a href="{e(L[k])}">{label}</a></li>')
+        cells.append(('<ul class="l">' + "".join(items) + "</ul>", ""))
+        out.append("<tr>" + "".join(f'<td class="{c}">{t}</td>' if c else f"<td>{t}</td>" for t, c in cells) + "</tr>")
+    out += [
+        "</tbody></table></div></main>",
+        "<footer>Vulnerability counts come from grype run on each image's SBOM at build time.</footer>",
+        "</body></html>",
+    ]
+    return "\n".join(out) + "\n"
+
+
+def main():
+    root = sys.argv[1]
+    rows = collect(root)
+    gen = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    with open(os.path.join(root, "index.html"), "w") as f:
+        f.write(render(rows, gen))
+    with open(os.path.join(root, "index.json"), "w") as f:
+        json.dump({"generated": gen, "images": rows}, f, indent=2)
+        f.write("\n")
+    print(f"status {len(rows)} images -> {root}/index.html")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        sys.exit("usage: status <stage-dir>")
+    main()
