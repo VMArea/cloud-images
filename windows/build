@@ -1,0 +1,385 @@
+#!/usr/bin/env python3
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import re
+import secrets
+import shutil
+import subprocess
+import sys
+import time
+import urllib.request
+
+import yaml
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, "lib"))
+import catalog  # noqa: E402
+from winvm import QGAError, VM, log, ppm_to_png  # noqa: E402
+
+ROOT = os.path.dirname(HERE)
+VIRTIO_VERSION = "0.1.271"
+VIRTIO_URL = "https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/archive-virtio/virtio-win-%s-1/virtio-win-%s.iso" % (VIRTIO_VERSION, VIRTIO_VERSION)
+CLOUDBASE_URL = "https://www.cloudbase.it/downloads/CloudbaseInitSetup_x64.msi"
+RANDOM_PASSWORD = "Vm!" + secrets.token_urlsafe(24)
+ISO_CACHE = os.environ.get("ISO_CACHE", os.path.expanduser("~/iso"))
+
+
+def sh(*a, **kw):
+    return subprocess.run(a, check=True, **kw)
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for b in iter(lambda: f.read(1 << 20), b""):
+            h.update(b)
+    return h.hexdigest()
+
+
+def fetch(url, dest, refresh=False):
+    if os.path.exists(dest) and not refresh:
+        return
+    log("download " + dest)
+    cmd = ["curl", "-sSL", "--retry", "5", "-C", "-", "-o", dest + ".part", url]
+    if os.path.exists(dest):
+        cmd = ["curl", "-sSL", "--retry", "5", "-z", dest, "-o", dest + ".part", url]
+    sh(*cmd)
+    if os.path.exists(dest + ".part") and os.path.getsize(dest + ".part") > 0:
+        os.replace(dest + ".part", dest)
+    elif os.path.exists(dest + ".part"):
+        os.unlink(dest + ".part")
+
+
+def check_eol(eol):
+    try:
+        with urllib.request.urlopen("https://endoflife.date/api/%s/%s.json" % (eol["product"], eol["cycle"]), timeout=20) as r:
+            d = json.load(r)
+    except Exception as e:
+        log("eol check skipped: %s" % e)
+        return
+    end = d.get("eol")
+    if isinstance(end, str) and end <= datetime.date.today().isoformat():
+        sys.exit("refusing to build: %s %s reached end of life on %s" % (eol["product"], eol["cycle"], end))
+    log("eol ok until %s" % end)
+
+
+def resolve_apps():
+    with open(os.path.join(HERE, "apps.yaml")) as f:
+        apps = yaml.safe_load(f)
+    out = []
+    os.makedirs(os.path.join(ISO_CACHE, "apps"), exist_ok=True)
+    for app in apps:
+        digest = None
+        url = app.get("url")
+        fname = app.get("file")
+        if app.get("github"):
+            req = urllib.request.Request("https://api.github.com/repos/%s/releases/latest" % app["github"], headers={"User-Agent": "vmarea-cloud-images"})
+            with urllib.request.urlopen(req, timeout=30) as r:
+                rel = json.load(r)
+            asset = next(x for x in rel["assets"] if re.search(app["asset"], x["name"]))
+            url, fname = asset["browser_download_url"], asset["name"]
+            digest = (asset.get("digest") or "").replace("sha256:", "") or None
+        dest = os.path.join(ISO_CACHE, "apps", fname)
+        if app.get("github") and os.path.exists(dest) and digest and sha256(dest) == digest:
+            pass
+        else:
+            if os.path.exists(dest):
+                os.unlink(dest)
+            sh("curl", "-sSL", "--retry", "5", "-o", dest, url)
+        got = sha256(dest)
+        if digest and got != digest:
+            sys.exit("checksum mismatch for %s: %s != %s" % (fname, got, digest))
+        log("app %s %s sha256=%s%s" % (app["id"], fname, got, " (verified against release)" if digest else " (signature checked in guest)"))
+        out.append({"id": app["id"], "file": fname, "signer": app.get("signer", ""), "path": app["path"], "args": app.get("args", ""), "url": url, "sha256": got, "src": dest})
+    return out
+
+
+def resolve_updates(recipe):
+    out = []
+    os.makedirs(os.path.join(ISO_CACHE, "updates"), exist_ok=True)
+    for role, spec in recipe.get("updates", {}).items():
+        row = catalog.pick(spec["query"], spec["title"])
+        if row and spec.get("min_date") and str(row["date"]) < str(spec["min_date"]):
+            log("update %s: latest %s (%s) is older than the install media, skipped" % (role, row["kb"], row["date"]))
+            continue
+        if not row:
+            if spec.get("optional"):
+                continue
+            sys.exit("no catalog entry for update role %s" % role)
+        urls = catalog.download_urls(row["id"])
+        for url in sorted(urls, key=lambda u: row["kb"].lower() in u):
+            host_ok = ".download.windowsupdate.com/" in url or ".dl.delivery.mp.microsoft.com/" in url
+            if not url.startswith("https://") or not host_ok:
+                sys.exit("unexpected update host: " + url)
+            fname = url.rsplit("/", 1)[1]
+            kb = re.search(r"-(kb\d+)-", fname)
+            kb = kb.group(1).upper() if kb else row["kb"]
+            dest = os.path.join(ISO_CACHE, "updates", fname)
+            if not os.path.exists(dest):
+                log("download %s" % fname)
+                sh("curl", "-sSL", "--retry", "5", "-o", dest + ".part", url)
+                os.replace(dest + ".part", dest)
+            sha1 = hashlib.sha1()
+            with open(dest, "rb") as f:
+                for b in iter(lambda: f.read(1 << 20), b""):
+                    sha1.update(b)
+            m = re.search(r"_([0-9a-f]{40})\.[a-z]+$", fname)
+            if m and m.group(1) != sha1.hexdigest():
+                sys.exit("sha1 mismatch for %s" % fname)
+            out.append({"role": role if kb == row["kb"] else "prereq", "kb": kb, "title": row["title"], "date": str(row["date"]),
+                        "build": row["build"] if kb == row["kb"] else None, "url": url, "file": fname, "sha256": sha256(dest), "src": dest})
+            log("update %s %s %s sha256=%s" % (out[-1]["role"], kb, row["date"], out[-1]["sha256"]))
+    return out
+
+
+def driver_paths(driver_dir):
+    out = []
+    n = 1
+    for letter in "DEFGH":
+        for d in ("vioscsi", "NetKVM", "vioserial"):
+            out.append('        <PathAndCredentials wcm:action="add" wcm:keyValue="%d"><Path>%s:\\%s\\%s\\amd64</Path></PathAndCredentials>' % (n, letter, d, driver_dir))
+            n += 1
+    return "\n".join(out)
+
+
+def make_build_iso(recipe, work, password, apps, updates):
+    stage = os.path.join(work, "iso")
+    if os.path.exists(stage):
+        shutil.rmtree(stage)
+    shutil.copytree(os.path.join(HERE, "files", "scripts"), os.path.join(stage, "scripts"))
+    shutil.copytree(os.path.join(HERE, "files", "cloudbase"), os.path.join(stage, "cloudbase"))
+    shutil.copy(os.path.join(ISO_CACHE, "CloudbaseInitSetup_x64.msi"), os.path.join(stage, "cloudbase"))
+    os.makedirs(os.path.join(stage, "apps"))
+    for app in apps:
+        shutil.copy(app["src"], os.path.join(stage, "apps", app["file"]))
+    os.makedirs(os.path.join(stage, "updates"))
+    for u in updates:
+        shutil.copy(u["src"], os.path.join(stage, "updates", u["file"]))
+    with open(os.path.join(stage, "updates", "updates.json"), "w") as f:
+        json.dump([{"kb": u["kb"], "file": u["file"], "role": u["role"]} for u in updates], f)
+    with open(os.path.join(stage, "apps", "apps.json"), "w") as f:
+        json.dump([{k: v for k, v in app.items() if k not in ("src", "url", "sha256")} for app in apps], f)
+    with open(os.path.join(HERE, "files", "Autounattend.xml")) as f:
+        x = f.read()
+    x = x.replace("@@DRIVER_PATHS@@", driver_paths(recipe["driver_dir"])).replace("@@EDITION@@", recipe["edition"]).replace("@@BUILD_PASSWORD@@", password)
+    with open(os.path.join(stage, "Autounattend.xml"), "w") as f:
+        f.write(x)
+    up = os.path.join(stage, "cloudbase", "Unattend.xml")
+    with open(up) as f:
+        x = f.read().replace("@@RANDOM_PASSWORD@@", RANDOM_PASSWORD)
+    with open(up, "w") as f:
+        f.write(x)
+    iso = os.path.join(work, "build.iso")
+    sh("genisoimage", "-quiet", "-allow-limited-size", "-V", "VMAREA_BUILD", "-J", "-joliet-long", "-r", "-o", iso, stage)
+    return iso
+
+
+def run_script(vm, name, timeout=1800, tries=3):
+    with open(os.path.join(HERE, "files", "scripts", name)) as f:
+        body = f.read()
+    rc, out, err = vm.qga.ps_retry(body, timeout, tries)
+    log("%s rc=%s" % (name, rc))
+    for l in (out + err).strip().splitlines()[-40:]:
+        log("  " + l)
+    return rc, out
+
+
+def reboot(vm, timeout=1800):
+    vm.qga.exec("shutdown.exe", ["/r", "/t", "3", "/f"], 60)
+    vm.qga.wait_gone(120)
+    if not vm.qga.wait_ready(timeout, vm):
+        raise SystemExit("guest agent did not return after reboot")
+    time.sleep(20)
+
+
+def wait_agent(vm, timeout, work):
+    end = time.time() + timeout
+    last = 0
+    while time.time() < end:
+        if not vm.alive():
+            raise SystemExit("vm exited unexpectedly")
+        if vm.qga.ready():
+            return
+        if time.time() - last > 120:
+            last = time.time()
+            try:
+                vm.screenshot(os.path.join(work, "screen.ppm"))
+            except Exception:
+                pass
+            log("waiting for guest agent")
+        time.sleep(5)
+    raise SystemExit("guest agent not ready within %ds" % timeout)
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("recipe")
+    ap.add_argument("--resume", action="store_true")
+    ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--refresh", action="store_true")
+    ap.add_argument("--ram", type=int)
+    a = ap.parse_args()
+
+    with open(a.recipe) as f:
+        r = yaml.safe_load(f)
+    ident = "windows-" + r["version"]
+    work = os.path.join(ROOT, "work", ident)
+    out_dir = os.path.join(ROOT, "output")
+    os.makedirs(out_dir, exist_ok=True)
+    os.makedirs(ISO_CACHE, exist_ok=True)
+    state_path = os.path.join(work, "state.json")
+    t0 = time.time()
+
+    if not a.resume:
+        if os.path.exists(work):
+            shutil.rmtree(work)
+        os.makedirs(work)
+        state = {"done": []}
+    else:
+        with open(state_path) as f:
+            state = json.load(f)
+
+    def done(p):
+        return p in state["done"]
+
+    def mark(p):
+        state["done"].append(p)
+        with open(state_path, "w") as f:
+            json.dump(state, f)
+
+    check_eol(r["eol"])
+    win_iso = os.path.join(ISO_CACHE, r["source"]["file"])
+    virtio_iso = os.path.join(ISO_CACHE, "virtio-win-%s.iso" % VIRTIO_VERSION)
+    fetch(r["source"]["url"], win_iso)
+    fetch(VIRTIO_URL, virtio_iso)
+    fetch(CLOUDBASE_URL, os.path.join(ISO_CACHE, "CloudbaseInitSetup_x64.msi"), refresh=True)
+
+    disk = os.path.join(work, "disk.qcow2")
+    if not a.resume:
+        password = "Vm!" + secrets.token_urlsafe(18)
+        apps = resolve_apps()
+        updates = resolve_updates(r)
+        state["apps"] = [{k: v for k, v in x.items() if k != "src"} for x in apps]
+        state["updates"] = [{k: v for k, v in x.items() if k != "src"} for x in updates]
+        state["secrets"] = [password, RANDOM_PASSWORD]
+        make_build_iso(r, work, password, apps, updates)
+        sh("qemu-img", "create", "-q", "-f", "qcow2", disk, "%dG" % r["disk_gb"])
+        with open(state_path, "w") as f:
+            json.dump(state, f)
+    build_iso = os.path.join(work, "build.iso")
+    if a.resume and a.refresh:
+        apps = resolve_apps()
+        updates = resolve_updates(r)
+        state["apps"] = [{k: v for k, v in x.items() if k != "src"} for x in apps]
+        state["updates"] = [{k: v for k, v in x.items() if k != "src"} for x in updates]
+        state["secrets"] = [state["secrets"][0], RANDOM_PASSWORD]
+        make_build_iso(r, work, state["secrets"][0], apps, updates)
+        with open(state_path, "w") as f:
+            json.dump(state, f)
+
+    cdroms = [build_iso, virtio_iso] if done("install") else [win_iso, build_iso, virtio_iso]
+    vm = VM(work, disk, name="build", ram=a.ram or r["ram_mb"], cpus=4, cpu=r["cpu"], tpm=r["tpm"], secureboot=r["secureboot"],
+            cdroms=cdroms, fresh_vars=not a.resume)
+    try:
+        vm.start()
+        log("vm started: " + " ".join(vm.args))
+        if not done("install"):
+            for _ in range(30):
+                vm.key("ret")
+                time.sleep(1)
+        wait_agent(vm, 7200, work)
+        if not done("install"):
+            mark("install")
+            log("installed, guest agent up (%ds)" % (time.time() - t0))
+        if not done("configure"):
+            run_script(vm, "baseline.ps1", 300)
+            mark("configure")
+        if not done("updates"):
+            rc, out = run_script(vm, "updates.ps1", 5400, 1)
+            if rc != 0:
+                raise SystemExit("update install failed")
+            reboot(vm)
+            state["updates_installed"] = json.loads(out.strip().splitlines()[-1])
+            mark("updates")
+        if not done("apps"):
+            rc, out = run_script(vm, "apps.ps1", 1800, 1)
+            if rc != 0:
+                raise SystemExit("apps install failed")
+            state["apps_installed"] = json.loads(out.strip().splitlines()[-1])
+            mark("apps")
+        if not done("prepared"):
+            run_script(vm, "baseline.ps1", 300)
+            run_script(vm, "remove-builder.ps1", 300)
+            rc, out = run_script(vm, "prepare-sysprep.ps1", 900)
+            if rc != 0:
+                raise SystemExit("prepare-sysprep failed")
+            mark("prepared")
+        if not done("cleanup"):
+            reboot(vm)
+            run_script(vm, "cleanup.ps1", 3600, 1)
+            mark("cleanup")
+        info_script = r'''
+$cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+$o = [ordered]@{
+  product = $cv.ProductName; edition = $cv.EditionID; build = "$($cv.CurrentBuild).$($cv.UBR)"; display = $cv.DisplayVersion
+  hotfixes = @(Get-HotFix | Select-Object -ExpandProperty HotFixID)
+  drivers = @(Get-CimInstance Win32_PnPSignedDriver | Where-Object { $_.Manufacturer -match 'Red Hat' } | ForEach-Object { "$($_.DeviceName) $($_.DriverVersion)" } | Sort-Object -Unique)
+  qemu_ga = (Get-CimInstance Win32_Product -Filter "Name like 'QEMU Guest Agent%'" | Select-Object -First 1 -ExpandProperty Version)
+  cloudbase_init = (Get-ItemProperty 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init\Python\Scripts\cloudbase-init.exe').VersionInfo.ProductVersion
+  partitions = @(Get-Partition -DiskNumber 0 | ForEach-Object { "$($_.PartitionNumber):$($_.Type):$($_.Size)" })
+}
+$o | ConvertTo-Json -Compress
+'''
+        rc, out, err = vm.qga.ps_retry(info_script, 300)
+        try:
+            info = json.loads(out.strip().splitlines()[-1])
+        except Exception:
+            info = {"raw": out}
+        log("sysprep")
+        rc, out, err = vm.qga.ps_retry(
+            "Start-Process C:\\Windows\\System32\\Sysprep\\sysprep.exe -WorkingDirectory 'C:\\Program Files\\Cloudbase Solutions\\Cloudbase-Init\\conf' -ArgumentList '/generalize /oobe /shutdown /mode:vm /unattend:Unattend.xml'", 60)
+        if not vm.wait_exit(1800):
+            try:
+                rc, out, err = vm.qga.ps("Get-Content C:\\Windows\\System32\\Sysprep\\Panther\\setupact.log -Tail 40", 60)
+                log(out)
+            except QGAError:
+                pass
+            raise SystemExit("sysprep did not shut the vm down")
+    finally:
+        vm.stop()
+        if os.path.exists(os.path.join(work, "screen.ppm")):
+            ppm_to_png(os.path.join(work, "screen.ppm"), os.path.join(work, "screen.png"))
+
+    stamp = datetime.date.today().strftime("%Y%m%d")
+    name = "%s-%s" % (ident, stamp)
+    outq = os.path.join(out_dir, name + ".qcow2")
+    log("compress")
+    sh("qemu-img", "convert", "-c", "-O", "qcow2", "-W", "-m", "4", disk, outq)
+    digest = sha256(outq)
+    with open(outq + ".sha256", "w") as f:
+        f.write("%s  %s\n" % (digest, name + ".qcow2"))
+    manifest = {
+        "name": ident, "date": stamp, "file": name + ".qcow2", "sha256": digest,
+        "size_bytes": os.path.getsize(outq), "virtual_size_gb": r["disk_gb"],
+        "source": {"file": r["source"]["file"], "url": r["source"]["url"], "sha256": sha256(win_iso), "edition": r["edition"]},
+        "virtio_win": VIRTIO_VERSION, "cloudbase_init_msi_sha256": sha256(os.path.join(ISO_CACHE, "CloudbaseInitSetup_x64.msi")),
+        "updates": state.get("updates"), "updates_installed": state.get("updates_installed"), "cpu": r["cpu"], "tpm": r["tpm"], "secureboot": r["secureboot"],
+        "build_seconds": int(time.time() - t0), "guest": info,
+        "apps": [{k: v for k, v in x.items() if k != "src"} for x in state["apps"]], "apps_installed": state.get("apps_installed"),
+    }
+    with open(outq[:-6] + ".json", "w") as f:
+        json.dump(manifest, f, indent=2)
+    sec = outq[:-6] + ".secrets.json"
+    with open(sec, "w") as f:
+        json.dump(state["secrets"], f)
+    os.chmod(sec, 0o600)
+    if not a.keep:
+        shutil.rmtree(work)
+    log("done %s (%d MiB) in %ds" % (outq, os.path.getsize(outq) >> 20, time.time() - t0))
+
+
+if __name__ == "__main__":
+    main()

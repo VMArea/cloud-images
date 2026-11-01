@@ -1,0 +1,28 @@
+name: windows-server
+version: "2019"
+arch: x86_64
+source:
+  url: "https://go.microsoft.com/fwlink/p/?LinkID=2195167&clcid=0x409&culture=en-us&country=US"
+  file: server-2019-eval-x64-en-us.iso
+edition: "Windows Server 2019 SERVERSTANDARD"
+driver_dir: 2k19
+tpm: false
+secureboot: false
+cpu: host
+disk_gb: 40
+ram_mb: 6144
+eol:
+  product: windows-server
+  cycle: "2019"
+updates:
+  ssu:
+    query: Servicing Stack Update Windows Server 2019
+    title: '^\d{4}-\d{2} Servicing Stack Update for Windows Server 2019 for x64-based Systems \(KB\d+\)$'
+    min_date: 2022-12-01
+    optional: true
+  cu:
+    query: Cumulative Update Windows Server 2019 x64
+    title: '^\d{4}-\d{2} Cumulative Update for Windows Server 2019 for x64-based Systems \(KB\d+\)$'
+  dotnet:
+    query: Cumulative Update .NET Framework Windows Server 2019 x64
+    title: '^\d{4}-\d{2} Cumulative Update for \.NET Framework 3\.5, 4\.7\.2 and 4\.8 for Windows Server 2019 for x64 \(KB\d+\)$'

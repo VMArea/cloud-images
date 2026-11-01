@@ -1,0 +1,23 @@
+name: windows-server
+version: "2022"
+arch: x86_64
+source:
+  url: "https://go.microsoft.com/fwlink/p/?LinkID=2195280&clcid=0x409&culture=en-us&country=US"
+  file: server-2022-eval-x64-en-us.iso
+edition: "Windows Server 2022 SERVERSTANDARD"
+driver_dir: 2k22
+tpm: false
+secureboot: false
+cpu: host
+disk_gb: 40
+ram_mb: 6144
+eol:
+  product: windows-server
+  cycle: "2022"
+updates:
+  cu:
+    query: Cumulative Update Microsoft server operating system version 21H2 x64
+    title: '^\d{4}-\d{2} Cumulative Update for Microsoft server operating system version 21H2 for x64-based Systems \(KB\d+\)$'
+  dotnet:
+    query: Cumulative Update .NET Framework Microsoft server operating system version 21H2 x64
+    title: '^\d{4}-\d{2} Cumulative Update for \.NET Framework 3\.5, 4\.8 and 4\.8\.1 for Microsoft server operating system version 21H2 for x64 \(KB\d+\)$'
