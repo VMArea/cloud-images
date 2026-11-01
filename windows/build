@@ -188,7 +188,10 @@ def run_script(vm, name, timeout=1800, tries=3):
 
 
 def reboot(vm, timeout=1800):
-    vm.qga.exec("shutdown.exe", ["/r", "/t", "3", "/f"], 60)
+    try:
+        vm.qga.exec("shutdown.exe", ["/r", "/t", "3", "/f"], 60)
+    except QGAError:
+        pass
     vm.qga.wait_gone(120)
     if not vm.qga.wait_ready(timeout, vm):
         raise SystemExit("guest agent did not return after reboot")
@@ -301,11 +304,13 @@ def main():
             rc, out = run_script(vm, "updates.ps1", 5400, 1)
             if rc != 0:
                 raise SystemExit("update install failed")
-            reboot(vm)
             state["updates_installed"] = json.loads(out.strip().splitlines()[-1])
             mark("updates")
+        if not done("updates_reboot"):
+            reboot(vm)
+            mark("updates_reboot")
         if not done("apps"):
-            rc, out = run_script(vm, "apps.ps1", 1800, 1)
+            rc, out = run_script(vm, "apps.ps1", 1800, 3)
             if rc != 0:
                 raise SystemExit("apps install failed")
             state["apps_installed"] = json.loads(out.strip().splitlines()[-1])
@@ -320,7 +325,7 @@ def main():
             mark("prepared")
         if not done("cleanup"):
             reboot(vm)
-            run_script(vm, "cleanup.ps1", 3600, 1)
+            run_script(vm, "cleanup.ps1", 3600, 3)
             mark("cleanup")
         info_script = r'''
 $cv = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'

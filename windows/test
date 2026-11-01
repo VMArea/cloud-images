@@ -127,7 +127,7 @@ $cvk = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
   rtp_status = "$($mp.RealTimeProtectionEnabled)"; rtp_pref = "$($mpp.DisableRealtimeMonitoring)"; defender_svc = "$((Get-Service WinDefend -ErrorAction SilentlyContinue).Status)"
   chrome = (Test-Path 'C:\Program Files\Google\Chrome\Application\chrome.exe'); sevenzip = (Test-Path 'C:\Program Files\7-Zip\7z.exe'); npp = (Test-Path 'C:\Program Files\Notepad++\notepad++.exe')
   readme = $readme; desktop = $desk; users = $users; confhead = $ccfg; unattend_left = @($left)
-  recycle = @(Get-ChildItem 'C:\$Recycle.Bin' -Recurse -File -Force -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.FullName })
+  recycle = @(Get-ChildItem 'C:\$Recycle.Bin' -Recurse -File -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'desktop.ini' } | ForEach-Object { [string]$_.FullName })
   hostname = $tcp.Hostname; nvhostname = $tcp.'NV Hostname'; computername = $env:COMPUTERNAME; dnshost = [System.Net.Dns]::GetHostName()
   disk = $disk.Size; parts = $parts; c = $c.Size; tz = (Get-TimeZone).Id
   errors = $errs; logtail = @($log | Select-Object -Last 25 | ForEach-Object { [string]$_ }); nlog = $log.Count

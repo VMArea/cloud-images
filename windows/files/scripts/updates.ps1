@@ -4,11 +4,17 @@ $list = Get-Content "${root}updates\updates.json" -Raw | ConvertFrom-Json
 $out = @()
 foreach ($u in $list) {
     $f = Join-Path "${root}updates" $u.file
-    $sig = Get-AuthenticodeSignature $f
-    Write-Output "install $($u.kb) $($u.role) signature=$($sig.Status)"
+    Write-Output "install $($u.kb) $($u.role)"
     $p = Start-Process dism.exe -ArgumentList "/online /add-package /packagepath:`"$f`" /norestart /LogPath:C:\Windows\Temp\dism-$($u.kb).log" -Wait -PassThru -NoNewWindow
-    Write-Output "  exit $($p.ExitCode)"
-    if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010 -and $u.role -ne "prereq") { throw "dism failed for $($u.kb): $($p.ExitCode)" }
-    $out += @{ kb = $u.kb; role = $u.role; exit = $p.ExitCode }
+    $code = $p.ExitCode
+    Write-Output "  dism exit $code"
+    if ($code -ne 0 -and $code -ne 3010) {
+        $w = Start-Process wusa.exe -ArgumentList "`"$f`" /quiet /norestart" -Wait -PassThru
+        $code = $w.ExitCode
+        Write-Output "  wusa exit $code"
+        if ($code -eq 2359302) { $code = 0 }
+    }
+    if ($code -ne 0 -and $code -ne 3010 -and $u.role -ne 'prereq') { throw "update failed for $($u.kb): $code" }
+    $out += @{ kb = $u.kb; role = $u.role; exit = $code }
 }
 ConvertTo-Json -Compress -InputObject @($out)
