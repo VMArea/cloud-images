@@ -26,3 +26,13 @@ Needs Linux with KVM, qemu-system-x86, qemu-utils, ovmf, swtpm, genisoimage, pyt
 ## Test
 
 The test boots the image on a copy-on-write overlay grown to 60G with a config drive (label `config-2`, `openstack/latest/meta_data.json` with `admin_pass`, a 25 character host name, DHCP network). It checks Cloudbase-Init, host name, disk extension, network, guest agent commands, RDP, firewall, lockout, power plan, policies, installed apps, absence of build traces, then boots again with a new instance id and password to prove a reset. `--cpu x86-64-v3` or `--cpu host` selects the CPU type.
+
+## Results (2026-11-01)
+
+| Image | Build | Cumulative update | Test |
+|---|---|---|---|
+| Windows Server 2019 | 17763.9376 | KB5126651, .NET KB5127685 and KB5127666 | 54 passed, 0 failed (host CPU) |
+| Windows Server 2022 | 20348.5761 | KB5126655, .NET KB5127693 and KB5127687 | 54 passed, 0 failed (host CPU) |
+| Windows Server 2025 | 26100.33650 | KB5043080 checkpoint, KB5126646, .NET KB5127690 | 55 passed, 0 failed on both a v3-flag CPU and host |
+
+QEMU 8.2 has no named `x86-64-v3` model, so the 2025 test uses `qemu64` with the v3 feature flags. Setup itself does not run on that model (error 0x800706BA), so 2025 is built on `host`. The 2019 cumulative update is installed with `wusa` because DISM 10.0.17763 rejects the package (error 50).
