@@ -48,22 +48,23 @@ def file_hash(path, algo):
     return h.hexdigest()
 
 
-def expected_hash(sums_text, filename, fmt):
+def expected_hash(sums_text, filename):
     for line in sums_text.splitlines():
         line = line.strip()
-        if fmt == "bsd":
-            m = re.match(r"^\S+ \((.+)\) = ([0-9a-fA-F]+)$", line)
-            if m and m.group(1) == filename:
-                return m.group(2).lower()
-        else:
-            m = re.match(r"^([0-9a-fA-F]+)\s+\*?(.+)$", line)
-            if m and m.group(2) == filename:
-                return m.group(1).lower()
+        m = re.match(r"^\S+ \((.+)\) = ([0-9a-fA-F]+)$", line)
+        if m and m.group(1) == filename:
+            return m.group(2).lower()
+        m = re.match(r"^([0-9a-fA-F]+)\s+\*?(.+)$", line)
+        if m and m.group(2) == filename:
+            return m.group(1).lower()
     return None
 
 
 def check_eol(spec):
-    eol = spec["eol"]
+    eol = spec.get("eol")
+    if not eol:
+        log("eol check skipped: rolling release")
+        return None
     url = f"https://endoflife.date/api/{eol['product']}/{eol['cycle']}.json"
     data = json.loads(http_get(url))
     value = data.get("eol")
@@ -76,6 +77,37 @@ def check_eol(spec):
     return value
 
 
+def build_keyring(sig, cache_dir):
+    if "keyring" in sig:
+        return sig["keyring"]
+    ring = os.path.join(cache_dir, "verify-keyring.gpg")
+    if os.path.exists(ring):
+        os.remove(ring)
+    key = os.path.join(ROOT, sig["key"])
+    base = ["gpg", "--batch", "--no-default-keyring", "--keyring", ring]
+    r = subprocess.run(base + ["--import", key], capture_output=True, text=True)
+    if r.returncode != 0:
+        die(f"key import failed:\n{r.stderr}")
+    r = subprocess.run(base + ["--with-colons", "--fingerprint"], capture_output=True, text=True)
+    have = {l.split(":")[9] for l in r.stdout.splitlines() if l.startswith("fpr:")}
+    want = sig["fingerprint"].replace(" ", "").upper()
+    if want not in have:
+        die(f"key {sig['key']} does not contain fingerprint {want}")
+    return ring
+
+
+def decompress(path):
+    if not path.endswith(".xz"):
+        return path
+    out = path[:-3]
+    if not os.path.exists(out) or os.path.getmtime(out) < os.path.getmtime(path):
+        log(f"decompressing {os.path.basename(path)}")
+        with open(out + ".part", "wb") as f:
+            subprocess.run(["xz", "-dc", path], stdout=f, check=True)
+        os.replace(out + ".part", out)
+    return out
+
+
 def fetch_verified(spec, cache_dir):
     os.makedirs(cache_dir, exist_ok=True)
     src = spec["source"]["url"]
@@ -84,22 +116,30 @@ def fetch_verified(spec, cache_dir):
     sums_path = os.path.join(cache_dir, cs["url"].rsplit("/", 1)[1])
     download(cs["url"], sums_path)
 
-    signed = False
     sig = spec.get("signature")
-    if sig:
+    signed = False
+
+    def verify(target):
         sig_path = os.path.join(cache_dir, sig["url"].rsplit("/", 1)[1])
         download(sig["url"], sig_path)
-        r = subprocess.run(
-            ["gpgv", "--keyring", sig["keyring"], sig_path, sums_path],
-            capture_output=True, text=True,
-        )
+        ring = build_keyring(sig, cache_dir)
+        if sig.get("kind") == "clearsign":
+            if os.path.abspath(sig_path) != os.path.abspath(sums_path):
+                die("a clearsign signature must be the checksum file")
+            cmd = ["gpgv", "--keyring", ring, sig_path]
+        else:
+            cmd = ["gpgv", "--keyring", ring, sig_path, target]
+        r = subprocess.run(cmd, capture_output=True, text=True)
         if r.returncode != 0:
-            die(f"signature verification failed:\n{r.stderr}")
-        signed = True
+            die("signature verification failed:" + chr(10) + r.stderr)
         log("signature ok")
 
+    if sig and sig.get("target") != "image":
+        verify(sums_path)
+        signed = True
+
     with open(sums_path) as f:
-        want = expected_hash(f.read(), fname, cs.get("format", "sums"))
+        want = expected_hash(f.read(), fname)
     if not want:
         die(f"{fname} not listed in {cs['url']}")
 
@@ -112,13 +152,20 @@ def fetch_verified(spec, cache_dir):
         os.remove(img)
         die(f"checksum mismatch for {fname}: expected {want}, got {got}")
     log(f"checksum ok ({cs['algo']})")
-    return img, want, signed
+    if sig and sig.get("target") == "image":
+        verify(img)
+        signed = True
+    return decompress(img), want, signed
 
 
-def customize_args(spec, workdir, pkglist_name):
+HEADER = "# Managed by VMArea. See /etc/vmarea/README.txt"
+BUILD_FILES = ("vmarea-pkglist", "vmarea-pkglist-before", "vmarea-pending")
+
+
+def customize_args(spec):
     pm = spec["package_manager"]
     mode = spec["first_boot_update"]
-    if pm not in ("apt", "dnf"):
+    if pm not in ("apt", "dnf", "zypper", "pacman"):
         die(f"unsupported package_manager {pm}")
     a = []
 
@@ -130,51 +177,163 @@ def customize_args(spec, workdir, pkglist_name):
         "rm -f /etc/resolv.conf; echo 'nameserver 169.254.2.3' > /etc/resolv.conf; "
         "ip link set eth0 up; ip addr add 169.254.2.15/16 dev eth0; ip route add default via 169.254.2.2; "
     )
+    listing = {
+        "apt": "dpkg-query -W -f '${Package} ${Version}\\n'",
+        "pacman": "pacman -Q",
+        "dnf": "rpm -qa --qf '%{NAME} %{VERSION}-%{RELEASE}\\n'",
+        "zypper": "rpm -qa --qf '%{NAME} %{VERSION}-%{RELEASE}\\n'",
+    }[pm]
+    run(f"{listing} > /vmarea-pkglist-before")
+    if pm != "pacman":
+        run(
+            "if command -v dracut >/dev/null 2>&1; then mkdir -p /etc/dracut.conf.d; "
+            f"echo '{HEADER}' > /etc/dracut.conf.d/90-vmarea.conf; echo 'hostonly=\"no\"' >> /etc/dracut.conf.d/90-vmarea.conf; fi"
+        )
+
     if pm == "apt":
+        run("mkdir -p /var/cache/apt/archives && mount -t tmpfs -o size=700m tmpfs /var/cache/apt/archives && mkdir -p /var/cache/apt/archives/partial")
         run(
             netup + "export DEBIAN_FRONTEND=noninteractive; apt-get update && "
-            "apt-get -y -o Dpkg::Options::=--force-confnew install qemu-guest-agent cloud-init unattended-upgrades"
+            "apt-get -y -o Dpkg::Options::=--force-confold full-upgrade && "
+            "apt-get -y -o Dpkg::Options::=--force-confnew install qemu-guest-agent cloud-init unattended-upgrades "
+            "curl wget nano vim-tiny htop ca-certificates unzip bash-completion locales && "
+            "apt-get -y autoremove --purge"
         )
-    else:
-        run(netup + "dnf -y install qemu-guest-agent cloud-init")
+        run("umount /var/cache/apt/archives")
+        pending = "l=$(apt-get -s dist-upgrade | grep '^Inst')"
+    elif pm == "dnf":
+        rhel = spec["name"] in ("almalinux", "rocky", "centos-stream")
+        extra = "wget nano vim-minimal ca-certificates unzip bash-completion glibc-langpack-en" + ("" if rhel else " htop")
+        a.extend(["--upload", f"{ROOT}/files/set-kernel-cmdline:/tmp/set-kernel-cmdline"])
+        a.extend(["--upload", f"{ROOT}/files/remove-old-kernels:/tmp/remove-old-kernels"])
+        run("sh /tmp/set-kernel-cmdline")
         run(
-            "f=/etc/sysconfig/qemu-ga; [ -f $f ] && "
-            "sed -i -E 's/guest-exec(-status)?,?//g; s/guest-file-[a-z-]+,?//g' $f; true"
+            netup + f"dnf -y upgrade && dnf -y install qemu-guest-agent cloud-init {extra} && "
+            "{ command -v curl >/dev/null || dnf -y install curl; } && sh /tmp/remove-old-kernels"
         )
+        run("rm -f /tmp/set-kernel-cmdline /tmp/remove-old-kernels")
+        pending = "l=$(dnf -q check-update 2>/dev/null | grep -E '^[A-Za-z0-9_.+-]+[.][A-Za-z0-9_]+ +[0-9]')"
+    elif pm == "zypper":
+        pk = "qemu-guest-agent cloud-init curl wget nano vim htop ca-certificates unzip bash-completion glibc-locale"
+        run(
+            netup + "ok=; for i in 1 2 3; do zypper --non-interactive --gpg-auto-import-keys refresh -f && "
+            f"zypper --non-interactive update && zypper --non-interactive install {pk} && ok=1 && break; sleep 10; done; "
+            "[ -n \"$ok\" ] && { zypper --non-interactive purge-kernels || true; }"
+        )
+        pending = "l=$(zypper -q lu | grep '^v ')"
+    else:
+        a.extend(["--mkdir", "/etc/mkinitcpio.conf.d"])
+        a.extend(["--write", f"/etc/mkinitcpio.conf.d/vmarea.conf:{HEADER}\nHOOKS=(base systemd microcode modconf kms keyboard sd-vconsole block filesystems fsck)\n"])
+        run(
+            netup + "[ -e /dev/stdin ] || ln -s /proc/self/fd/0 /dev/stdin; pacman-key --init && pacman-key --populate archlinux && "
+            "pacman -Syu --noconfirm --disable-sandbox && pacman -S --noconfirm --needed --disable-sandbox qemu-guest-agent cloud-init "
+            "curl wget nano vim htop ca-certificates unzip bash-completion"
+        )
+        run("gpgconf --homedir /etc/pacman.d/gnupg --kill all || true")
+        run("systemctl disable systemd-time-wait-sync || true")
+        pending = "l=$(pacman -Qu)"
+    run(f"{pending}; n=$(printf '%s' \"$l\" | grep -c .); echo $n > /vmarea-pending; [ \"$n\" = 0 ] || {{ echo \"pending updates:\"; echo \"$l\"; false; }}")
+    run(
+        "for f in /etc/sysconfig/qemu-ga /etc/default/qemu-guest-agent; do [ -f $f ] && "
+        "sed -i -E 's/^(BLACKLIST_RPC|BLOCK_RPCS|DAEMON_ARGS)=.*/\\1=/; s/^(FILTER_RPC_ARGS=).*/\\1/' $f && "
+        f"sed -i '1i {HEADER}' $f; done; true"
+    )
+    if spec.get("kernel_args"):
+        a.extend(["--upload", f"{ROOT}/files/set-kernel-args:/tmp/set-kernel-args"])
+        run(f"sh /tmp/set-kernel-args '{spec['kernel_args']}'; rm -f /tmp/set-kernel-args")
+    run("ln -sf /usr/share/zoneinfo/UTC /etc/localtime; echo UTC > /etc/timezone")
+    if pm == "apt":
+        run("sed -i 's/^# *en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen; locale-gen en_US.UTF-8; echo LANG=en_US.UTF-8 > /etc/default/locale")
+    elif pm == "pacman":
+        run("sed -i 's/^#en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen; locale-gen; echo LANG=en_US.UTF-8 > /etc/locale.conf")
+    else:
+        run("echo LANG=en_US.UTF-8 > /etc/locale.conf")
     run("systemctl enable qemu-guest-agent || true")
+    run("for u in firewalld ufw; do systemctl disable $u 2>/dev/null; done; [ -f /etc/ufw/ufw.conf ] && sed -i 's/^ENABLED=.*/ENABLED=no/' /etc/ufw/ufw.conf; true")
     a.extend(["--mkdir", "/etc/vmarea"])
-    a.extend(["--write", f"/etc/vmarea/image.conf:FIRST_BOOT_UPDATE={mode}\n"])
+    a.extend(["--write", f"/etc/vmarea/image.conf:{HEADER}\nFIRST_BOOT_UPDATE={mode}\n"])
+    a.extend(["--upload", f"{ROOT}/files/README.txt:/etc/vmarea/README.txt"])
     a.extend(["--upload", f"{ROOT}/files/90-vmarea.cfg:/etc/cloud/cloud.cfg.d/90-vmarea.cfg"])
+    a.extend(["--mkdir", "/etc/ssh/sshd_config.d"])
     a.extend(["--upload", f"{ROOT}/files/00-vmarea-sshd.conf:/etc/ssh/sshd_config.d/00-vmarea.conf"])
     a.extend(["--upload", f"{ROOT}/files/first-boot-update-{pm}:/usr/local/sbin/vmarea-first-boot-update"])
     a.extend(["--chmod", "0755:/usr/local/sbin/vmarea-first-boot-update"])
+    a.extend(["--upload", f"{ROOT}/files/vmarea-swap:/usr/local/sbin/vmarea-swap"])
+    a.extend(["--chmod", "0755:/usr/local/sbin/vmarea-swap"])
     if pm == "apt" and mode == "security" and spec["name"] == "debian":
         run("sed -i '/label=Debian\";/d' /etc/apt/apt.conf.d/50unattended-upgrades")
 
-    if pm == "apt":
-        run(f"dpkg-query -W -f '${{Package}} ${{Version}}\\n' > /{pkglist_name}")
-    else:
-        run(f"rpm -qa --qf '%{{NAME}} %{{VERSION}}-%{{RELEASE}}\\n' > /{pkglist_name}")
+    run(f"{listing} > /vmarea-pkglist")
 
     if pm == "apt":
         run("apt-get clean; rm -rf /var/lib/apt/lists/*")
-    else:
+    elif pm == "dnf":
         run("dnf clean all; rm -rf /var/cache/dnf")
+    elif pm == "zypper":
+        run("zypper clean --all; rm -rf /var/cache/zypp/*")
+    else:
+        run("rm -rf /var/cache/pacman/pkg/* /var/lib/pacman/sync/*")
     run(
         "rm -f /etc/resolv.conf; "
         "if [ -f /vmarea-resolv-link ]; then ln -s \"$(cat /vmarea-resolv-link)\" /etc/resolv.conf; fi; "
         "rm -f /vmarea-resolv-link"
     )
     run("rm -f /etc/ssh/ssh_host_*")
-    run("find /var/log -type f -exec truncate -s0 {} +; find /var/log -type f -name '*.gz' -delete")
-    run("rm -rf /tmp/* /var/tmp/* /root/.bash_history /root/.ssh")
+    run("find /var/log -type f -exec truncate -s0 {} +; find /var/log -type f -name '*.gz' -delete; rm -rf /var/log/journal/*")
+    run("rm -f /var/lib/systemd/random-seed /etc/machine-id.old; find /var/cache/man -type f -delete 2>/dev/null; true")
+    run(
+        "cd /root && for f in .[!.]* ..?* *; do [ -e \"$f\" ] || [ -L \"$f\" ] || continue; "
+        "case \"$f\" in .bashrc|.bash_profile|.bash_logout|.cshrc|.tcshrc|.profile) ;; *) rm -rf \"$f\" ;; esac; done; "
+        "find /home -mindepth 1 -delete 2>/dev/null; true"
+    )
     run("cloud-init clean --logs --seed")
-    a.extend(["--truncate", "/etc/machine-id"])
+    run(": > /etc/machine-id")
     a.extend(["--mkdir", "/var/lib/cloud/scripts/per-once"])
     wrapper = "/var/lib/cloud/scripts/per-once/10-vmarea-first-boot-update"
     a.extend(["--upload", f"{ROOT}/files/per-once-wrapper:{wrapper}"])
     a.extend(["--chmod", f"0755:{wrapper}"])
+    run("rm -rf /tmp/* /tmp/.[!.]* /var/tmp/* /var/tmp/.[!.]*")
+    if spec.get("selinux_relabel"):
+        a.append("--selinux-relabel")
     return a
+
+
+def gf(img, env, *cmds):
+    args = ["guestfish", "-a", img, "run"]
+    for c in cmds:
+        args += [":"] + c.split(" ") if isinstance(c, str) else [":"] + list(c)
+    r = subprocess.run(args, capture_output=True, text=True, env=env)
+    if r.returncode != 0:
+        die(f"guestfish {' '.join(map(str, cmds))} failed:\n{r.stderr}")
+    return r.stdout
+
+
+def grow_in_place(img, partition, size, env):
+    m = re.match(r"(/dev/[a-z]+)(\d+)$", partition)
+    dev, num = m.group(1), m.group(2)
+    subprocess.run(["qemu-img", "resize", img, size], check=True)
+    out = gf(img, env, f"part-expand-gpt {dev}")
+    guid = gf(img, env, f"part-get-gpt-guid {dev} {num}").strip()
+    ptype = gf(img, env, f"part-get-gpt-type {dev} {num}").strip()
+    pname = gf(img, env, f"part-get-name {dev} {num}").strip()
+    listing = gf(img, env, f"part-list {dev}")
+    start = None
+    cur = None
+    for line in listing.splitlines():
+        line = line.strip()
+        if line.startswith("part_num:"):
+            cur = line.split(":")[1].strip()
+        elif line.startswith("part_start:") and cur == num:
+            start = int(line.split(":")[1].strip()) // 512
+    if start is None:
+        die(f"partition {partition} not found")
+    last = int(gf(img, env, f"blockdev-getsz {dev}").strip()) - 34
+    cmds = [f"part-del {dev} {num}", f"part-add {dev} primary {start} {last}",
+            f"part-set-gpt-guid {dev} {num} {guid}", f"part-set-gpt-type {dev} {num} {ptype}"]
+    if pname and " " not in pname:
+        cmds.append(f"part-set-name {dev} {num} {pname}")
+    cmds += [f"e2fsck-f {partition}", f"resize2fs {partition}"]
+    gf(img, env, *cmds)
 
 
 def main():
@@ -200,28 +359,65 @@ def main():
     work = tempfile.mkdtemp(prefix=f"build-{name}-{version}-")
     try:
         env = dict(os.environ, LIBGUESTFS_BACKEND="direct", TMPDIR=work)
-        work_img = os.path.join(work, "image.qcow2")
-        subprocess.run(["qemu-img", "convert", "-O", "qcow2", img, work_img], check=True)
         pkglist = "vmarea-pkglist"
-        cmd = ["virt-customize", "-a", work_img] + customize_args(spec, work, pkglist)
-        log("customising")
-        subprocess.run(cmd, check=True, env=env)
-        subprocess.run(["virt-copy-out", "-a", work_img, "/" + pkglist, work], check=True, env=env)
-        subprocess.run(["guestfish", "-a", work_img, "-i", "rm", "/" + pkglist], check=True, env=env)
-        log("sparsifying")
-        tmp_out = out + ".part"
-        subprocess.run(
-            ["virt-sparsify", "--compress", "--convert", "qcow2", "--tmp", work, work_img, tmp_out],
-            check=True, env=env,
-        )
-        os.replace(tmp_out, out)
+        if spec["package_manager"] == "pkg":
+            log("customising by booting the image once")
+            subprocess.run(
+                [os.path.join(ROOT, "build-bsd"), "--mode", spec["first_boot_update"], img, out, work,
+                 os.path.join(work, pkglist)],
+                check=True,
+            )
+        else:
+            work_img = os.path.join(work, "image.qcow2")
+            subprocess.run(["qemu-img", "convert", "-O", "qcow2", img, work_img], check=True)
+            grow = spec.get("grow")
+            if grow:
+                log(f"growing {grow['partition']} to a {grow['size']} disk")
+                if grow.get("method") == "in-place":
+                    grow_in_place(work_img, grow["partition"], grow["size"], env)
+                else:
+                    grown = os.path.join(work, "grown.qcow2")
+                    subprocess.run(["qemu-img", "create", "-f", "qcow2", grown, grow["size"]], check=True)
+                    subprocess.run(["virt-resize", "--expand", grow["partition"], work_img, grown], check=True, env=env)
+                    os.replace(grown, work_img)
+            cmd = ["virt-customize", "--memsize", "1536", "-a", work_img] + customize_args(spec)
+            log("customising")
+            subprocess.run(cmd, check=True, env=env)
+            for bf in BUILD_FILES:
+                subprocess.run(["virt-copy-out", "-a", work_img, "/" + bf, work], check=True, env=env)
+                subprocess.run(["guestfish", "-a", work_img, "-i", "rm", "/" + bf], check=True, env=env)
+            log("sparsifying")
+            tmp_out = out + ".part"
+            subprocess.run(
+                ["virt-sparsify", "--compress", "--convert", "qcow2", "--tmp", work, work_img, tmp_out],
+                check=True, env=env,
+            )
+            os.replace(tmp_out, out)
 
-        pkgs = []
-        with open(os.path.join(work, pkglist)) as f:
-            for line in f:
-                p = line.split(None, 1)
-                if len(p) == 2:
-                    pkgs.append({"name": p[0], "version": p[1].strip()})
+        def read_list(path):
+            items = {}
+            with open(path) as f:
+                for line in f:
+                    p = line.split(None, 1)
+                    if len(p) == 2:
+                        items[p[0]] = p[1].strip()
+            return items
+
+        current = read_list(os.path.join(work, pkglist))
+        pkgs = [{"name": k, "version": v} for k, v in current.items()]
+        before_path = os.path.join(work, "vmarea-pkglist-before")
+        changes = None
+        pending = None
+        if os.path.exists(before_path):
+            before = read_list(before_path)
+            changes = {
+                "source_package_count": len(before),
+                "added": len([k for k in current if k not in before]),
+                "removed": len([k for k in before if k not in current]),
+                "changed": len([k for k in current if k in before and before[k] != current[k]]),
+            }
+            with open(os.path.join(work, "vmarea-pending")) as f:
+                pending = int(f.read().strip())
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -241,6 +437,8 @@ def main():
         "eol": eol,
         "first_boot_update": spec["first_boot_update"],
         "package_count": len(pkgs),
+        "changes_from_source": changes,
+        "pending_updates_after_build": pending,
         "packages": pkgs,
     }
     with open(os.path.join(args.output, base + ".json"), "w") as f:

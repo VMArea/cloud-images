@@ -1,0 +1,21 @@
+#!/bin/sh
+# Managed by VMArea. See /etc/vmarea/README.txt
+. /etc/vmarea/image.conf
+LOG=/var/log/vmarea-first-boot-update.log
+exec >>"$LOG" 2>&1
+retry() {
+    n=0
+    until "$@"; do
+        n=$((n + 1))
+        [ "$n" -ge 20 ] && return 1
+        sleep 5
+    done
+}
+case "$FIRST_BOOT_UPDATE" in
+    security) retry zypper --non-interactive --gpg-auto-import-keys patch --category security ;;
+    full) retry zypper --non-interactive --gpg-auto-import-keys update ;;
+esac
+rc=$?
+case $rc in 102|103) rc=0 ;; esac
+mkdir -p /var/lib/vmarea
+echo "$FIRST_BOOT_UPDATE $rc $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /var/lib/vmarea/first-boot-update

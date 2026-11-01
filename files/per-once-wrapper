@@ -1,2 +1,4 @@
 #!/bin/sh
+# Managed by VMArea. See /etc/vmarea/README.txt
+/usr/local/sbin/vmarea-swap >>/var/log/vmarea-swap.log 2>&1
 systemd-run --no-block --unit=vmarea-first-boot-update /usr/local/sbin/vmarea-first-boot-update

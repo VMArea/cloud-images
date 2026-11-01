@@ -1,0 +1,23 @@
+#!/bin/sh
+# Managed by VMArea. See /etc/vmarea/README.txt
+[ -n "$(swapon --show --noheadings 2>/dev/null)" ] && exit 0
+grep -qE '^[^#].*[[:space:]]swap[[:space:]]' /etc/fstab && exit 0
+kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo)
+if [ "$kb" -le 2097152 ]; then
+    mb=1024
+elif [ "$kb" -le 8388608 ]; then
+    mb=2048
+else
+    exit 0
+fi
+rm -f /swapfile
+if [ "$(findmnt -no FSTYPE /)" = btrfs ]; then
+    btrfs filesystem mkswapfile --size "${mb}m" /swapfile || exit 1
+else
+    fallocate -l "${mb}M" /swapfile || dd if=/dev/zero of=/swapfile bs=1M count="$mb" || exit 1
+    chmod 600 /swapfile
+    mkswap /swapfile || exit 1
+fi
+command -v restorecon >/dev/null 2>&1 && restorecon /swapfile
+swapon /swapfile || exit 1
+echo '/swapfile none swap sw 0 0' >> /etc/fstab

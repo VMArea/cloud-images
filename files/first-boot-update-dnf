@@ -1,4 +1,5 @@
 #!/bin/sh
+# Managed by VMArea. See /etc/vmarea/README.txt
 . /etc/vmarea/image.conf
 LOG=/var/log/vmarea-first-boot-update.log
 exec >>"$LOG" 2>&1

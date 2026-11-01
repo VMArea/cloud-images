@@ -1,0 +1,6 @@
+#!/bin/sh
+for f in /etc/default/grub.d/*.cfg /etc/default/grub; do
+    [ -f "$f" ] && grep -q '^GRUB_CMDLINE_LINUX_DEFAULT=' "$f" && sed -i "s|^\(GRUB_CMDLINE_LINUX_DEFAULT=\"[^\"]*\)\"|\1 $1\"|" "$f"
+done
+[ -f /boot/grub/grub.cfg ] && sed -i "/^[[:space:]]*linux[[:space:]]/ s|\$| $1|" /boot/grub/grub.cfg
+exit 0

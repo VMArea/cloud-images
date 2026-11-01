@@ -1,0 +1,14 @@
+#!/bin/sh
+# Managed by VMArea. See /etc/vmarea/README.txt
+. /etc/vmarea/image.conf
+LOG=/var/log/vmarea-first-boot-update.log
+exec >>"$LOG" 2>&1
+n=0
+until pacman -Syu --noconfirm; do
+    n=$((n + 1))
+    [ "$n" -ge 20 ] && break
+    sleep 5
+done
+rc=$?
+mkdir -p /var/lib/vmarea
+echo "$FIRST_BOOT_UPDATE $rc $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /var/lib/vmarea/first-boot-update

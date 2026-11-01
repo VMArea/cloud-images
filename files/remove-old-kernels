@@ -1,0 +1,6 @@
+#!/bin/sh
+cur=$(rpm -q kernel-core --last | head -1 | awk '{print $1}' | sed 's/^kernel-core-//')
+[ -n "$cur" ] || exit 0
+old=$(rpm -qa 'kernel*' | grep -E '^kernel(-core|-modules|-modules-core|-modules-extra|-devel)?-[0-9]' | grep -vF "$cur")
+[ -n "$old" ] || exit 0
+dnf -y remove $old
