@@ -312,6 +312,7 @@ def main():
             mark("apps")
         if not done("prepared"):
             run_script(vm, "baseline.ps1", 300)
+            run_script(vm, "partitions.ps1", 600)
             run_script(vm, "remove-builder.ps1", 300)
             rc, out = run_script(vm, "prepare-sysprep.ps1", 900)
             if rc != 0:
