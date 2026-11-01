@@ -1,0 +1,14 @@
+- id: chrome
+  url: https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi
+  file: googlechromestandaloneenterprise64.msi
+  signer: Google LLC
+  path: C:\Program Files\Google\Chrome\Application\chrome.exe
+- id: 7zip
+  github: ip7z/7zip
+  asset: '^7z\d+-x64\.msi$'
+  path: C:\Program Files\7-Zip\7z.exe
+- id: notepad++
+  github: notepad-plus-plus/notepad-plus-plus
+  asset: '^npp\..+\.Installer\.x64\.msi$'
+  signer: Notepad++
+  path: C:\Program Files\Notepad++\notepad++.exe
