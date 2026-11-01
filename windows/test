@@ -1,0 +1,422 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import re
+import secrets
+import shutil
+import subprocess
+import sys
+import time
+import uuid
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(HERE, "lib"))
+from winvm import QGAError, VM, log, ppm_to_png  # noqa: E402
+
+ROOT = os.path.dirname(HERE)
+HOSTNAME = "vmarea-test-hostname-0123"
+MAC = "52:54:00:12:34:56"
+DISK_GB = 60
+RDP_PORT = 33389
+results = []
+SECRETS_FILE = None
+
+
+def check(name, ok, detail=""):
+    results.append((name, bool(ok)))
+    print(("PASS " if ok else "FAIL ") + name + ((" - " + str(detail)) if detail and not ok else ""), flush=True)
+    return ok
+
+
+def sh(*a, **kw):
+    return subprocess.run(a, check=True, **kw)
+
+
+def config_drive(path, stage, instance, password):
+    if os.path.exists(stage):
+        shutil.rmtree(stage)
+    meta = {
+        "uuid": instance, "hostname": HOSTNAME, "name": HOSTNAME, "admin_pass": password, "launch_index": 0,
+        "availability_zone": "nova", "meta": {}, "public_keys": {}, "project_id": "vmarea",
+        "network_config": {"content_path": "/content/0000", "link": "/dev/null"},
+    }
+    eni = "auto lo\niface lo inet loopback\n\nauto eth0\niface eth0 inet dhcp\n    hwaddress ether %s\n    dns-nameservers 1.1.1.1\n" % MAC
+    ud = "#cloud-config\nhostname: %s\nfqdn: %s.vmarea.test\nmanage_etc_hosts: true\nuser: Administrator\npassword: %s\nchpasswd:\n  expire: False\n" % (HOSTNAME, HOSTNAME, password)
+    for v in ("latest", "2012-08-10"):
+        d = os.path.join(stage, "openstack", v)
+        os.makedirs(d)
+        with open(os.path.join(d, "meta_data.json"), "w") as f:
+            json.dump(meta, f)
+        with open(os.path.join(d, "user_data"), "w") as f:
+            f.write(ud)
+    os.makedirs(os.path.join(stage, "openstack", "content"))
+    with open(os.path.join(stage, "openstack", "content", "0000"), "w") as f:
+        f.write(eni)
+    sh("genisoimage", "-quiet", "-V", "config-2", "-J", "-r", "-o", path, stage)
+
+
+LOGON = r'''
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+public class LU {
+  [DllImport("advapi32.dll", SetLastError=true, CharSet=CharSet.Unicode)]
+  public static extern bool LogonUser(string u, string d, string p, int t, int pr, out IntPtr tok);
+  [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
+  public static bool Try(string u, string p) { IntPtr t; bool ok = LogonUser(u, ".", p, 3, 0, out t); if (ok) CloseHandle(t); return ok; }
+}
+"@
+'''
+
+
+def logon(vm, password):
+    rc, out, err = vm.qga.ps_retry(LOGON + "[LU]::Try('Administrator','%s')" % password, 120)
+    return out.strip().lower() == "true"
+
+
+STATE_PS = r'''
+$tcp = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
+$cbdir = 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init\log'
+$logf = Join-Path $cbdir 'cloudbase-init.log'
+$boot = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime
+$svc = Get-Service cloudbase-init -ErrorAction SilentlyContinue
+$fresh = $false
+if (Test-Path $logf) { $fresh = ((Get-Item $logf).LastWriteTime -gt $boot) }
+@{ svc = "$($svc.Status)"; fresh = $fresh; uptime = [int]((Get-Date) - $boot).TotalSeconds } | ConvertTo-Json -Compress
+'''
+
+FACTS_PS = r'''
+$tcp = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\Tcpip\Parameters'
+$disk = Get-Disk -Number 0
+$parts = @(Get-Partition -DiskNumber 0 | Sort-Object Offset | ForEach-Object { @{ n = $_.PartitionNumber; type = "$($_.Type)"; letter = "$($_.DriveLetter)"; size = $_.Size } })
+$c = Get-Partition -DriveLetter C
+$cb = 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init\log\cloudbase-init.log'
+$log = @(); if (Test-Path $cb) { $log = @(Get-Content $cb) }
+$errs = @($log | Where-Object { $_ -match ' ERROR ' -or $_ -match ' CRITICAL ' } | ForEach-Object { [string]$_ })
+$route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Select-Object -First 1
+$ifc = Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway } | Select-Object -First 1
+$dnsok = $false; try { $dnsok = @([System.Net.Dns]::GetHostAddresses('example.com')).Count -gt 0 } catch {}
+$pingok = $false; try { $pingok = Test-Connection -ComputerName 10.0.2.2 -Count 1 -Quiet } catch {}
+$na = (net accounts) -join "`n"
+$fwrdp = @(Get-NetFirewallRule -Direction Inbound -Enabled True -Action Allow | Where-Object { ($_ | Get-NetFirewallPortFilter).LocalPort -contains '3389' -and ($_ | Get-NetFirewallPortFilter).Protocol -eq 'TCP' })
+$icmp = Get-NetFirewallRule -Name 'FPS-ICMP4-ERQ-In' -ErrorAction SilentlyContinue
+$ts = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server'
+$nla = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp').UserAuthentication
+$sm = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\ServerManager' -ErrorAction SilentlyContinue
+$rel = Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Reliability' -ErrorAction SilentlyContinue
+$pw = (powercfg /getactivescheme) -join ' '
+$hib = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Power').HibernateEnabled
+$tmp = Join-Path $env:TEMP 'chk.inf'; secedit /export /cfg $tmp /areas SECURITYPOLICY | Out-Null
+$sec = (Get-Content $tmp) -join "`n"; Remove-Item $tmp -Force
+$rdpl = @(Get-NetTCPConnection -LocalPort 3389 -State Listen -ErrorAction SilentlyContinue).Count
+$setup = Get-Content 'C:\Windows\Setup\Scripts\SetupComplete.cmd' -ErrorAction SilentlyContinue
+$au = Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate\AU' -ErrorAction SilentlyContinue
+$mp = $null; try { $mp = Get-MpComputerStatus -ErrorAction Stop } catch {}
+$mpp = $null; try { $mpp = Get-MpPreference -ErrorAction Stop } catch {}
+$readme = ''; if (Test-Path 'C:\ProgramData\VMArea\README.txt') { $readme = [IO.File]::ReadAllText('C:\ProgramData\VMArea\README.txt') }
+$desk = @(Get-ChildItem 'C:\Users\*\Desktop\*' -Force -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+$users = @(Get-ChildItem 'C:\Users' -Directory -Force | ForEach-Object { $_.Name })
+$ccfg = [string](Get-Content 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init\conf\cloudbase-init.conf' -TotalCount 1)
+$left = @('C:\Windows\Panther\unattend.xml', 'C:\Windows\Panther\Unattend\unattend.xml', 'C:\Windows\System32\Sysprep\Unattend.xml', 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init\conf\Unattend.xml') | Where-Object { Test-Path $_ }
+$cvk = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+@{
+  build = "$($cvk.CurrentBuild).$($cvk.UBR)"; hotfixes = @(Get-HotFix | ForEach-Object { $_.HotFixID })
+  au = $au.AUOptions; au_reboot = $au.NoAutoRebootWithLoggedOnUsers
+  rtp_policy = (Get-ItemProperty 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection' -ErrorAction SilentlyContinue).DisableRealtimeMonitoring
+  rtp_status = "$($mp.RealTimeProtectionEnabled)"; rtp_pref = "$($mpp.DisableRealtimeMonitoring)"; defender_svc = "$((Get-Service WinDefend -ErrorAction SilentlyContinue).Status)"
+  chrome = (Test-Path 'C:\Program Files\Google\Chrome\Application\chrome.exe'); sevenzip = (Test-Path 'C:\Program Files\7-Zip\7z.exe'); npp = (Test-Path 'C:\Program Files\Notepad++\notepad++.exe')
+  readme = $readme; desktop = $desk; users = $users; confhead = $ccfg; unattend_left = @($left)
+  recycle = @(Get-ChildItem 'C:\$Recycle.Bin' -Recurse -File -Force -ErrorAction SilentlyContinue).Count
+  hostname = $tcp.Hostname; nvhostname = $tcp.'NV Hostname'; computername = $env:COMPUTERNAME; dnshost = [System.Net.Dns]::GetHostName()
+  disk = $disk.Size; parts = $parts; c = $c.Size; tz = (Get-TimeZone).Id
+  errors = $errs; logtail = @($log | Select-Object -Last 25 | ForEach-Object { [string]$_ }); nlog = $log.Count
+  gateway = "$($route.NextHop)"; dns = @($ifc.DNSServer | Where-Object { $_.AddressFamily -eq 2 } | ForEach-Object { $_.ServerAddresses } | ForEach-Object { $_ })
+  ip = @($ifc.IPv4Address | ForEach-Object { $_.IPAddress }); dnsok = $dnsok; pingok = $pingok
+  accounts = $na; fwrdp = $fwrdp.Count; fwrdp_profiles = @($fwrdp | ForEach-Object { "$($_.Profile)" })
+  icmp = @{ enabled = "$($icmp.Enabled)"; profile = "$($icmp.Profile)" }
+  fdeny = $ts.fDenyTSConnections; nla = $nla; rdpsvc = "$((Get-Service TermService).StartType)"; rdplisten = $rdpl
+  sm_open = $sm.DoNotOpenServerManagerAtLogon; sm_wac = $sm.DoNotPopWACConsoleAtSMLaunch
+  shut_on = $rel.ShutdownReasonOn; shut_ui = $rel.ShutdownReasonUI
+  power = $pw; hib = $hib; sec = $sec; setupcomplete = ($setup -join ' ')
+  svc = "$((Get-Service cloudbase-init).Status)"; svcstart = "$((Get-Service cloudbase-init).StartType)"
+  qga = "$((Get-Service QEMU-GA).Status)"; os = (Get-CimInstance Win32_OperatingSystem).Caption
+  localscripts = (Test-Path 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init\LocalScripts\vmarea-baseline.ps1')
+} | ConvertTo-Json -Compress -Depth 6
+'''
+
+
+README = ("These files let the control panel set your password, hostname and network, and run startup scripts. "
+          "Removing or changing them can stop those features working. We cannot support servers where they were changed. "
+          "Files: C:\\Program Files\\Cloudbase Solutions\\Cloudbase-Init\\conf\\ (configuration), QEMU guest agent service, VirtIO drivers.\r\n")
+BENIGN = ("Incomplete NetworkDetails object", "No adapters were configured")
+CONF_HEAD = "; Managed by VMArea. See C:\\ProgramData\\VMArea\\README.txt"
+
+TRACE_PS = r'''
+$pats = @(%s)
+$dirs = 'C:\Windows\Panther', 'C:\Windows\Temp', 'C:\Windows\Setup', 'C:\Windows\System32\Sysprep', 'C:\Windows\debug', 'C:\Windows\Logs', 'C:\Windows\INF', 'C:\ProgramData', 'C:\Users', 'C:\Program Files\Cloudbase Solutions', 'C:\Windows\System32\config\systemprofile'
+$hits = @()
+foreach ($d in $dirs) {
+  Get-ChildItem $d -Recurse -Force -File -ErrorAction SilentlyContinue | Where-Object { $_.Length -lt 20MB -and $_.Extension -notin '.dll','.exe','.sys','.mui','.msi','.cab','.msu' } | ForEach-Object {
+    foreach ($p in $pats) { if (Select-String -Path $_.FullName -Pattern $p -SimpleMatch -Quiet -ErrorAction SilentlyContinue) { $hits += $_.FullName; break } }
+  }
+}
+ConvertTo-Json -Compress -InputObject @($hits)
+'''
+
+
+def traces(vm):
+    if not SECRETS_FILE or not os.path.exists(SECRETS_FILE):
+        return []
+    with open(SECRETS_FILE) as f:
+        pws = json.load(f)
+    rc, out, err = vm.qga.ps_retry(TRACE_PS % ",".join("'%s'" % p for p in pws), 1500)
+    return json.loads(out.strip().splitlines()[-1])
+
+
+def wait_cloudbase(vm, timeout=1500):
+    end = time.time() + timeout
+    last = ""
+    stable = 0
+    while time.time() < end:
+        if not vm.alive():
+            return False, "vm exited"
+        try:
+            if not vm.qga.ready():
+                stable = 0
+                time.sleep(5)
+                continue
+            rc, out, err = vm.qga.ps(STATE_PS, 60)
+            st = json.loads(out.strip().splitlines()[-1])
+            last = st
+            if st["svc"] == "Stopped" and st["fresh"] and st["uptime"] > 60:
+                stable += 1
+                if stable >= 2:
+                    return True, st
+            else:
+                stable = 0
+        except (QGAError, ValueError, IndexError):
+            stable = 0
+        time.sleep(10)
+    return False, last
+
+
+def facts(vm):
+    rc, out, err = vm.qga.ps_retry(FACTS_PS, 300)
+    try:
+        return json.loads(out.strip().splitlines()[-1])
+    except ValueError:
+        with open(os.path.join(vm.work, "facts.raw"), "w") as f:
+            f.write(out[:200000] + "|||" + err[:5000])
+        raise
+
+
+def rdp_auth(password, port=RDP_PORT, user="Administrator"):
+    exe = shutil.which("xfreerdp3") or shutil.which("xfreerdp")
+    if not exe:
+        return None
+    ver3 = "xfreerdp3" in exe
+    cert = "/cert:ignore" if ver3 else "/cert-ignore"
+    r = subprocess.run([exe, "/v:127.0.0.1:%d" % port, "/u:" + user, "/p:" + password, "/auth-only", cert, "/sec:nla"],
+                       capture_output=True, text=True, timeout=90)
+    return r.returncode == 0
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("image")
+    ap.add_argument("--cpu")
+    ap.add_argument("--ram", type=int, default=4096)
+    ap.add_argument("--keep", action="store_true")
+    a = ap.parse_args()
+
+    global SECRETS_FILE
+    image = os.path.abspath(a.image)
+    SECRETS_FILE = image[:-6] + ".secrets.json"
+    with open(image[:-6] + ".json") as f:
+        man = json.load(f)
+    cpu = a.cpu or man["cpu"]
+    work = os.path.join(ROOT, "work", "test-" + os.path.basename(image)[:-6] + "-" + cpu.replace(",", "_"))
+    if os.path.exists(work):
+        shutil.rmtree(work)
+    os.makedirs(work)
+    overlay = os.path.join(work, "overlay.qcow2")
+    sh("qemu-img", "create", "-q", "-f", "qcow2", "-b", image, "-F", "qcow2", overlay, "%dG" % DISK_GB)
+    pw1 = "Ab1!" + secrets.token_hex(8)
+    pw2 = "Zy9#" + secrets.token_hex(8)
+    inst1 = str(uuid.uuid4())
+    iso = os.path.join(work, "config.iso")
+    config_drive(iso, os.path.join(work, "cfg"), inst1, pw1)
+    t0 = time.time()
+    vm = VM(work, overlay, name="t", ram=a.ram, cpus=2, cpu=cpu, tpm=man["tpm"], secureboot=man["secureboot"], cdroms=[iso],
+            hostfwd=[(RDP_PORT, 3389)], mac=MAC, fresh_vars=True, cache="writeback")
+    try:
+        vm.start()
+        log("boot 1 cpu=%s" % cpu)
+        if not vm.qga.wait_ready(1800, vm):
+            check("guest agent responds after first boot", False, "no guest-ping in 30 min")
+            raise SystemExit(1)
+        log("guest agent up after %ds" % (time.time() - t0))
+        ok, st = wait_cloudbase(vm)
+        check("Cloudbase-Init finished", ok, st)
+        log("cloudbase done after %ds" % (time.time() - t0))
+        f = facts(vm)
+        errs = [e for e in f["errors"] if not any(k in e for k in BENIGN)]
+        check("Cloudbase-Init log has no errors", not errs, errs[:3])
+        check("Cloudbase-Init service enabled for next boot", f["svcstart"] == "Automatic", f["svcstart"])
+        check("hostname set to the long name", f["hostname"] == HOSTNAME and f["dnshost"].lower() == HOSTNAME, (f["hostname"], f["dnshost"]))
+        gap = f["disk"] - f["c"]
+        last = f["parts"][-1]
+        check("C: is the last partition", last["letter"] == "C", f["parts"])
+        check("C: extended to the full %dG disk" % DISK_GB, gap < (1 << 30), "disk=%d c=%d" % (f["disk"], f["c"]))
+        check("network has default route", f["gateway"] == "10.0.2.2", f["gateway"])
+        check("network has DNS servers", len(f["dns"]) > 0, f["dns"])
+        check("guest address from DHCP", "10.0.2.15" in f["ip"], f["ip"])
+        check("DNS resolves", f["dnsok"])
+        check("time zone is UTC", f["tz"] == "UTC", f["tz"])
+        check("RDP enabled with NLA", f["fdeny"] == 0 and f["nla"] == 1, (f["fdeny"], f["nla"]))
+        check("RDP service automatic and listening", f["rdpsvc"] == "Automatic" and f["rdplisten"] > 0, (f["rdpsvc"], f["rdplisten"]))
+        check("firewall allows TCP 3389 on all profiles", f["fwrdp"] > 0 and any(p in ("Any", "-1", "2147483647") for p in f["fwrdp_profiles"]), f["fwrdp_profiles"])
+        check("ICMP echo allowed in firewall", f["icmp"]["enabled"] == "True" and f["icmp"]["profile"] in ("Any",), f["icmp"])
+        check("Server Manager and Admin Center prompts off", f["sm_open"] == 1 and f["sm_wac"] == 1, (f["sm_open"], f["sm_wac"]))
+        check("Shutdown Event Tracker off", f["shut_on"] == 0, f["shut_on"])
+        check("High performance power plan", "High performance" in f["power"], f["power"])
+        check("hibernation off", f["hib"] == 0, f["hib"])
+        check("lockout threshold is Never", re.search(r"Lockout threshold:\s+Never", f["accounts"]) is not None, f["accounts"])
+        check("AllowAdministratorLockout off in policy", re.search(r"AllowAdministratorLockout\s*=\s*0", f["sec"]) is not None or "AllowAdministratorLockout" not in f["sec"], "")
+        check("baseline re-applied at boot (SetupComplete and LocalScripts)", "vmarea-baseline" in f["setupcomplete"] and f["localscripts"], f["setupcomplete"])
+        cus = [u for u in man.get("updates") or [] if u["role"] == "cu"]
+        check("OS build matches the build recorded after the cumulative update", f["build"] == man["guest"]["build"], (f["build"], man["guest"]["build"]))
+        check("cumulative update installed (%s)" % (cus[0]["kb"] if cus else "none"), bool(cus) and cus[0]["kb"] in f["hotfixes"], f["hotfixes"])
+        if cus and cus[0].get("build"):
+            check("OS build equals the build named by the catalog (%s)" % cus[0]["build"], f["build"] == cus[0]["build"], f["build"])
+        check("Windows Update set to notify only (AUOptions=2)", f["au"] == 2 and f["au_reboot"] == 1, (f["au"], f["au_reboot"]))
+        check("Defender real-time protection off", f["rtp_status"] in ("False", "") and f["rtp_policy"] == 1, (f["rtp_status"], f["rtp_pref"], f["rtp_policy"]))
+        check("Defender service still installed", f["defender_svc"] != "", f["defender_svc"])
+        check("Chrome, 7-Zip and Notepad++ installed", f["chrome"] and f["sevenzip"] and f["npp"], (f["chrome"], f["sevenzip"], f["npp"]))
+        check("VMArea README present with the exact text", f["readme"] == README, f["readme"])
+        check("Cloudbase-Init conf carries the managed-by header", f["confhead"] == CONF_HEAD, f["confhead"])
+        check("nothing on desktops, no build user profile", not f["desktop"] and "vmbuild" not in [u.lower() for u in f["users"]], (f["desktop"], f["users"]))
+        check("answer files and recycle bin cleaned", not f["unattend_left"] and f["recycle"] == 0, (f["unattend_left"], f["recycle"]))
+        found = traces(vm)
+        check("no build password in any file", found == [], found)
+        check("guest agent service automatic", f["qga"] == "Running", f["qga"])
+
+        check("Administrator password works (LogonUser)", logon(vm, pw1))
+        check("wrong password rejected", not logon(vm, pw1 + "x"))
+        for _ in range(6):
+            logon(vm, "Wrong" + secrets.token_hex(4))
+        check("password still works after 6 failed logons (no lockout)", logon(vm, pw1))
+        rdp = rdp_auth(pw1)
+        if rdp is None:
+            check("RDP NLA login (freerdp not installed)", False, "xfreerdp missing")
+        else:
+            check("RDP NLA login with the password", rdp)
+            for _ in range(6):
+                rdp_auth("Wrong" + secrets.token_hex(4))
+            check("RDP login still works after 6 failed RDP attempts", rdp_auth(pw1))
+        import socket
+        s = socket.socket()
+        s.settimeout(5)
+        try:
+            s.connect(("127.0.0.1", RDP_PORT))
+            check("RDP port reachable from host", True)
+        except OSError as e:
+            check("RDP port reachable from host", False, e)
+        s.close()
+
+        q = vm.qga
+        try:
+            q.call("guest-ping")
+            check("qga guest-ping", True)
+        except QGAError as e:
+            check("qga guest-ping", False, e)
+        try:
+            o = q.call("guest-get-osinfo")
+            check("qga guest-get-osinfo", "name" in o and "windows" in json.dumps(o).lower(), o)
+        except QGAError as e:
+            check("qga guest-get-osinfo", False, e)
+        try:
+            rc, out, err = q.exec("cmd.exe", ["/c", "echo", "vmarea-exec-ok"], 60)
+            check("qga guest-exec and guest-exec-status", rc == 0 and "vmarea-exec-ok" in out, (rc, out, err))
+        except QGAError as e:
+            check("qga guest-exec and guest-exec-status", False, e)
+        try:
+            n = q.call("guest-network-get-interfaces")
+            check("qga guest-network-get-interfaces", any(MAC in json.dumps(i).lower() or MAC.replace(":", "-") in json.dumps(i).lower() for i in n) and "10.0.2.15" in json.dumps(n), n)
+        except QGAError as e:
+            check("qga guest-network-get-interfaces", False, e)
+        try:
+            check("qga guest-fsfreeze-status", q.call("guest-fsfreeze-status") == "thawed")
+        except QGAError as e:
+            check("qga guest-fsfreeze-status", False, e)
+        try:
+            n = q.call("guest-fsfreeze-freeze", timeout=120)
+            st = q.call("guest-fsfreeze-status")
+            th = q.call("guest-fsfreeze-thaw", timeout=60)
+            check("qga fsfreeze freeze and thaw", st == "frozen" and q.call("guest-fsfreeze-status") == "thawed", (n, st, th))
+        except QGAError as e:
+            try:
+                q.call("guest-fsfreeze-thaw", timeout=60)
+            except QGAError:
+                pass
+            check("qga fsfreeze freeze and thaw", False, e)
+        try:
+            h = q.call("guest-file-open", {"path": "C:\\Windows\\Temp\\vmarea-file-test.txt", "mode": "w"})
+            q.call("guest-file-write", {"handle": h, "buf-b64": "dm1hcmVh"})
+            q.call("guest-file-close", {"handle": h})
+            rc, out, err = q.exec("cmd.exe", ["/c", "type", "C:\\Windows\\Temp\\vmarea-file-test.txt"], 60)
+            check("qga file open, write and close", "vmarea" in out, out)
+        except QGAError as e:
+            check("qga file open, write and close", False, e)
+        try:
+            q.call("guest-set-user-password", {"username": "Administrator", "password": __import__("base64").b64encode(pw2.encode()).decode(), "crypted": False})
+            check("qga guest-set-user-password (live reset)", logon(vm, pw2) and not logon(vm, pw1))
+            q.call("guest-set-user-password", {"username": "Administrator", "password": __import__("base64").b64encode(pw1.encode()).decode(), "crypted": False})
+        except QGAError as e:
+            check("qga guest-set-user-password (live reset)", False, e)
+
+        log("password reset boot")
+        try:
+            vm.qga.exec("shutdown.exe", ["/s", "/t", "3", "/f"], 30)
+        except QGAError:
+            pass
+        if not vm.wait_exit(300):
+            vm.powerdown(120)
+        vm.stop()
+        config_drive(iso, os.path.join(work, "cfg"), str(uuid.uuid4()), pw2)
+        vm = VM(work, overlay, name="t", ram=a.ram, cpus=2, cpu=cpu, tpm=man["tpm"], secureboot=man["secureboot"], cdroms=[iso],
+                hostfwd=[(RDP_PORT, 3389)], mac=MAC, fresh_vars=False, cache="writeback")
+        vm.start()
+        if not vm.qga.wait_ready(1200, vm):
+            check("guest agent responds after reset boot", False)
+            raise SystemExit(1)
+        ok, st = wait_cloudbase(vm)
+        check("Cloudbase-Init finished on reset boot", ok, st)
+        f2 = facts(vm)
+        check("new password works after reset boot", logon(vm, pw2))
+        check("old password rejected after reset boot", not logon(vm, pw1))
+        check("hostname unchanged after reset boot", f2["hostname"] == HOSTNAME, f2["hostname"])
+        errs = [e for e in f2["errors"] if not any(k in e for k in BENIGN)]
+        check("Cloudbase-Init log has no errors after reset boot", not errs, errs[:3])
+        rdp = rdp_auth(pw2)
+        if rdp is not None:
+            check("RDP NLA login with the new password", rdp)
+    except SystemExit:
+        pass
+    finally:
+        try:
+            vm.screenshot(os.path.join(work, "screen.ppm"))
+            ppm_to_png(os.path.join(work, "screen.ppm"), os.path.join(work, "screen.png"))
+        except Exception:
+            pass
+        vm.stop()
+    failed = [n for n, ok in results if not ok]
+    print("%d passed, %d failed (%ds)" % (len(results) - len(failed), len(failed), time.time() - t0))
+    if not a.keep and not failed:
+        shutil.rmtree(work, ignore_errors=True)
+    sys.exit(1 if failed else 0)
+
+
+if __name__ == "__main__":
+    main()

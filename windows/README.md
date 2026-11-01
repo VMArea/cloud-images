@@ -1,0 +1,28 @@
+# Windows images
+
+Build scripts for Windows Server 2019, 2022, 2025 and Windows 11. The images are built from Microsoft Evaluation media and are never published. Only the scripts live here; licensing of the resulting images is the customer's responsibility.
+
+## What the build does
+
+- Downloads the Evaluation ISO from Microsoft, VirtIO drivers pinned to 0.1.271, and the latest stable Cloudbase-Init MSI. Apps listed in `apps.yaml` are fetched at build time and checked against the release digest or the Authenticode signature.
+- Drives QEMU directly (OVMF, q35, virtio-scsi, virtio-net, swtpm for TPM, secure boot where the recipe asks for it). No Packer.
+- Installs unattended from `files/Autounattend.xml` on a second ISO. Partitions are EFI, MSR and C: last, so no recovery partition sits behind C:. Storage and network drivers load in the windowsPE pass.
+- Installs the VirtIO guest tools and the QEMU guest agent at first logon, then drives every later step through the guest agent (`guest-exec`).
+- Applies Windows Update until nothing is left (time-boxed), then pins Windows Update to notify-only.
+- Installs Chrome, 7-Zip and Notepad++ and removes desktop shortcuts.
+- Applies the baseline in `files/scripts/baseline.ps1`: RDP with NLA, firewall rules for RDP and ICMP echo, account lockout off, Defender real-time protection off, high performance power plan, hibernation off, UTC, Server Manager and Shutdown Event Tracker prompts off. The same script runs again at first boot (SetupComplete and Cloudbase-Init LocalScripts).
+- Installs Cloudbase-Init (config drive metadata, `Administrator`, password injection, long host names, network config, volume extend), removes the build user, answer files, logs and temp files, then runs `sysprep /generalize /oobe /shutdown /mode:vm`.
+- Writes `output/windows-<version>-<YYYYMMDD>.qcow2`, a `.sha256` file, a `.json` manifest and an unpublished `.secrets.json` with the build passwords, used only by the test to prove none remain in the image.
+
+## Usage
+
+```
+windows/build windows/os/server-2022.yaml
+windows/test output/windows-2022-<date>.qcow2
+```
+
+Needs Linux with KVM, qemu-system-x86, qemu-utils, ovmf, swtpm, genisoimage, python3 with PyYAML, and freerdp3-x11 for the RDP login check. `ISO_CACHE` (default `~/iso`) holds the downloaded media. `--resume` continues a build from the last finished phase, `--keep` keeps the work directory.
+
+## Test
+
+The test boots the image on a copy-on-write overlay grown to 60G with a config drive (label `config-2`, `openstack/latest/meta_data.json` with `admin_pass`, a 25 character host name, DHCP network). It checks Cloudbase-Init, host name, disk extension, network, guest agent commands, RDP, firewall, lockout, power plan, policies, installed apps, absence of build traces, then boots again with a new instance id and password to prove a reset. `--cpu x86-64-v3` or `--cpu host` selects the CPU type.
