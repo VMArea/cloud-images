@@ -1,0 +1,51 @@
+#!/usr/bin/env python3
+import argparse
+import json
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from osfilter import allowed_os, manifests  # noqa: E402
+
+
+def pkgs(m):
+    return {p["name"]: p["version"] for p in m.get("packages", [])}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("outdir")
+    ap.add_argument("--prev-dir")
+    a = ap.parse_args()
+    allow = allowed_os()
+    pool = manifests(a.outdir) + (manifests(a.prev_dir) if a.prev_dir else [])
+    for m in manifests(a.outdir):
+        if m["name"] not in allow or not os.path.exists(os.path.join(a.outdir, m["file"])):
+            continue
+        earlier = [p for p in pool if p["name"] == m["name"] and p["version"] == m["version"] and p["_date"] < m["_date"]]
+        dest = os.path.join(a.outdir, m["file"][: -len(".qcow2")] + ".changes.txt")
+        lines = [f"{m['name']} {m['version']} build {m['_date']}"]
+        if not earlier:
+            lines.append("No previous build to compare with.")
+        else:
+            prev = max(earlier, key=lambda p: p["_date"])
+            new, old = pkgs(m), pkgs(prev)
+            added = sorted(set(new) - set(old))
+            removed = sorted(set(old) - set(new))
+            upgraded = sorted(n for n in new if n in old and new[n] != old[n])
+            lines.append(f"Compared with build {prev['_date']}")
+            lines.append(f"{len(added)} added, {len(removed)} removed, {len(upgraded)} changed")
+            lines.append("")
+            for n in added:
+                lines.append(f"+ {n} {new[n]}")
+            for n in removed:
+                lines.append(f"- {n} {old[n]}")
+            for n in upgraded:
+                lines.append(f"~ {n} {old[n]} -> {new[n]}")
+        with open(dest, "w") as f:
+            f.write("\n".join(lines) + "\n")
+        print(f"changes {os.path.basename(dest)}: {lines[1] if len(lines) < 3 else lines[2]}")
+
+
+if __name__ == "__main__":
+    main()

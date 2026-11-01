@@ -1,0 +1,8 @@
+debian
+almalinux
+rocky
+centos-stream
+fedora
+opensuse
+arch
+freebsd
