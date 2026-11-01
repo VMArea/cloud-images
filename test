@@ -1,0 +1,440 @@
+#!/usr/bin/env python3
+import argparse
+import base64
+import json
+import os
+import secrets
+import shutil
+import socket
+import subprocess
+import sys
+import time
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+HOSTNAME = "vmarea-test-hostname-0123"
+FQDN = HOSTNAME + ".example.com"
+GiB = 1024 ** 3
+
+results = []
+
+
+def record(name, ok, detail=""):
+    results.append((name, ok))
+    line = f"{'PASS' if ok else 'FAIL'} {name}"
+    if detail and not ok:
+        line += f": {detail}"
+    print(line, flush=True)
+
+
+def check(name, fn):
+    try:
+        res = fn()
+        if res is True or res is None:
+            record(name, True)
+        else:
+            record(name, False, str(res))
+    except Exception as e:
+        record(name, False, f"{type(e).__name__}: {e}")
+
+
+def free_port():
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def run(cmd, **kw):
+    return subprocess.run(cmd, capture_output=True, text=True, **kw)
+
+
+class VM:
+    def __init__(self, label, image, workdir, key, mac, overlay_size=None, overlay=None):
+        self.label = label
+        self.dir = os.path.join(workdir, label)
+        os.makedirs(self.dir, exist_ok=True)
+        self.key = key
+        self.mac = mac
+        self.port = free_port()
+        self.sock = os.path.join(self.dir, "qga.sock")
+        self.proc = None
+        self.overlay = overlay or os.path.join(self.dir, "disk.qcow2")
+        if overlay is None:
+            r = run(["qemu-img", "create", "-f", "qcow2", "-b", os.path.abspath(image), "-F", "qcow2", self.overlay, "20G"])
+            if r.returncode != 0:
+                raise RuntimeError(r.stderr)
+
+    def make_seed(self, instance_id, password, package_upgrade):
+        pub = open(self.key + ".pub").read().strip()
+        ud = [
+            "#cloud-config",
+            f"hostname: {HOSTNAME}",
+            "manage_etc_hosts: true",
+            f"fqdn: {FQDN}",
+            "user: root",
+            "disable_root: False",
+            f"password: {json.dumps(password)}",
+            "chpasswd:",
+            "  expire: False",
+        ]
+        if package_upgrade:
+            ud.append("package_upgrade: true")
+        ud += ["ssh_authorized_keys:", f"  - {json.dumps(pub)}"]
+        nc = [
+            "version: 1",
+            "config:",
+            "    - type: physical",
+            "      name: eth0",
+            f"      mac_address: '{self.mac}'",
+            "      subnets:",
+            "      - type: dhcp4",
+            "    - type: nameserver",
+            "      address:",
+            "      - '1.1.1.1'",
+            "      search:",
+            "      - 'example.com'",
+        ]
+        files = {"user-data": "\n".join(ud) + "\n", "meta-data": f"instance-id: {instance_id}\n", "network-config": "\n".join(nc) + "\n"}
+        for n, c in files.items():
+            with open(os.path.join(self.dir, n), "w") as f:
+                f.write(c)
+        seed = os.path.join(self.dir, f"seed-{instance_id[:8]}.iso")
+        r = run(["cloud-localds", "-N", os.path.join(self.dir, "network-config"), seed,
+                 os.path.join(self.dir, "user-data"), os.path.join(self.dir, "meta-data")])
+        if r.returncode != 0:
+            raise RuntimeError(r.stderr)
+        return seed
+
+    def start(self, seed):
+        if os.path.exists(self.sock):
+            os.remove(self.sock)
+        cmd = [
+            "qemu-system-x86_64", "-enable-kvm", "-cpu", "host", "-smp", "2", "-m", "2048",
+            "-display", "none", "-vga", "std",
+            "-serial", f"file:{self.dir}/console.log",
+            "-device", "virtio-scsi-pci,id=scsi0",
+            "-drive", f"file={self.overlay},if=none,id=drive0,format=qcow2,discard=unmap",
+            "-device", "scsi-hd,drive=drive0,bus=scsi0.0",
+            "-drive", f"file={seed},if=none,id=cd0,media=cdrom,readonly=on",
+            "-device", "ide-cd,drive=cd0",
+            "-netdev", f"user,id=n0,hostfwd=tcp:127.0.0.1:{self.port}-:22",
+            "-device", f"virtio-net-pci,netdev=n0,mac={self.mac}",
+            "-chardev", f"socket,path={self.sock},server=on,wait=off,id=qga0",
+            "-device", "virtio-serial",
+            "-device", "virtserialport,chardev=qga0,name=org.qemu.guest_agent.0",
+        ]
+        self.proc = subprocess.Popen(cmd, stdout=open(f"{self.dir}/qemu.log", "ab"), stderr=subprocess.STDOUT)
+
+    def kill(self):
+        if self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+            try:
+                self.proc.wait(10)
+            except subprocess.TimeoutExpired:
+                self.proc.kill()
+                self.proc.wait()
+
+    def _ssh_base(self):
+        return ["ssh", "-p", str(self.port), "-o", "StrictHostKeyChecking=no", "-o", "UserKnownHostsFile=/dev/null",
+                "-o", "LogLevel=ERROR", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=15"]
+
+    def ssh(self, command, password=None, timeout=120):
+        if password is None:
+            cmd = self._ssh_base() + ["-i", self.key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "root@127.0.0.1", command]
+            env = None
+        else:
+            cmd = ["sshpass", "-e"] + self._ssh_base() + ["-o", "PreferredAuthentications=password", "-o", "PubkeyAuthentication=no",
+                                                           "root@127.0.0.1", command]
+            env = dict(os.environ, SSHPASS=password)
+        return run(cmd, timeout=timeout, env=env)
+
+    def wait_ssh(self, timeout=300):
+        end = time.time() + timeout
+        while time.time() < end:
+            if self.proc.poll() is not None:
+                raise RuntimeError("qemu exited")
+            try:
+                if self.ssh("true", timeout=30).returncode == 0:
+                    return
+            except subprocess.TimeoutExpired:
+                pass
+            time.sleep(3)
+        raise TimeoutError("ssh did not come up")
+
+    def wait_cloud_init(self, timeout=900):
+        end = time.time() + timeout
+        last = ""
+        while time.time() < end:
+            try:
+                r = self.ssh("cloud-init status --wait --format json", timeout=600)
+            except subprocess.TimeoutExpired:
+                continue
+            if r.stdout.strip().startswith("{"):
+                return json.loads(r.stdout)
+            last = r.stdout + r.stderr
+            time.sleep(3)
+        raise TimeoutError("cloud-init did not finish: " + last)
+
+    def qga(self, execute, arguments=None, timeout=15):
+        s = socket.socket(socket.AF_UNIX)
+        s.settimeout(timeout)
+        try:
+            s.connect(self.sock)
+            sid = secrets.randbelow(2 ** 30)
+            s.sendall(b"\xff" + json.dumps({"execute": "guest-sync-delimited", "arguments": {"id": sid}}).encode() + b"\n")
+            buf = b""
+
+            def read_line():
+                nonlocal buf
+                while b"\n" not in buf:
+                    chunk = s.recv(65536)
+                    if not chunk:
+                        raise ConnectionError("agent socket closed")
+                    buf += chunk
+                line, buf = buf.split(b"\n", 1)
+                return line
+
+            while b"\xff" not in buf:
+                chunk = s.recv(65536)
+                if not chunk:
+                    raise ConnectionError("agent socket closed")
+                buf += chunk
+            buf = buf.split(b"\xff", 1)[1]
+            if json.loads(read_line()).get("return") != sid:
+                raise RuntimeError("agent sync mismatch")
+            req = {"execute": execute}
+            if arguments:
+                req["arguments"] = arguments
+            s.sendall(json.dumps(req).encode() + b"\n")
+            resp = json.loads(read_line())
+            if "error" in resp:
+                raise RuntimeError(f"{execute}: {resp['error'].get('desc')}")
+            return resp.get("return")
+        finally:
+            s.close()
+
+    def wait_agent(self, timeout=180):
+        end = time.time() + timeout
+        while time.time() < end:
+            try:
+                self.qga("guest-ping", timeout=5)
+                return True
+            except Exception:
+                time.sleep(3)
+        return False
+
+    def qga_exec(self, path, args, timeout=60):
+        pid = self.qga("guest-exec", {"path": path, "arg": args, "capture-output": True})["pid"]
+        end = time.time() + timeout
+        while time.time() < end:
+            st = self.qga("guest-exec-status", {"pid": pid})
+            if st.get("exited"):
+                out = base64.b64decode(st.get("out-data", "")).decode(errors="replace")
+                return st.get("exitcode"), out
+            time.sleep(1)
+        raise TimeoutError("guest-exec did not finish")
+
+    def host_keys(self):
+        r = self.ssh("for f in /etc/ssh/ssh_host_*_key.pub; do ssh-keygen -lf $f; done")
+        return set(l.split()[1] for l in r.stdout.splitlines() if l.strip())
+
+
+def wait_marker(vm, timeout=900):
+    end = time.time() + timeout
+    while time.time() < end:
+        r = vm.ssh("cat /var/lib/vmarea/first-boot-update 2>/dev/null; echo ---; systemctl is-active vmarea-first-boot-update 2>&1")
+        marker, _, unit = r.stdout.partition("---")
+        if marker.strip():
+            return marker.strip()
+        if unit.strip() not in ("active", "activating"):
+            return None
+        time.sleep(5)
+    return None
+
+
+def shutdown(vm):
+    try:
+        vm.ssh("systemctl poweroff", timeout=30)
+    except Exception:
+        pass
+    try:
+        vm.proc.wait(60)
+    except subprocess.TimeoutExpired:
+        vm.kill()
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Boot a built image and check it behaves like a VMArea instance")
+    ap.add_argument("image")
+    ap.add_argument("--no-package-upgrade", action="store_true", help="omit package_upgrade from the seed")
+    ap.add_argument("--keep", action="store_true", help="keep the work directory")
+    ap.add_argument("--workdir", default=os.path.join(ROOT, ".testrun"))
+    args = ap.parse_args()
+
+    work = os.path.join(os.path.abspath(args.workdir), f"{os.path.basename(args.image)}-{os.getpid()}")
+    os.makedirs(work, exist_ok=True)
+    key = os.path.join(work, "id_ed25519")
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", key], check=True)
+    pw1, pw2 = secrets.token_urlsafe(14), secrets.token_urlsafe(14)
+    pkg_up = not args.no_package_upgrade
+    a = b = None
+    started = time.time()
+    try:
+        a = VM("a", args.image, work, key, "52:54:00:aa:00:01")
+        b = VM("b", args.image, work, key, "52:54:00:aa:00:02")
+        iid_a, iid_b = secrets.token_hex(20), secrets.token_hex(20)
+        a.start(a.make_seed(iid_a, pw1, pkg_up))
+        b.start(b.make_seed(iid_b, pw1, pkg_up))
+
+        up = {}
+        for vm in (a, b):
+            try:
+                vm.wait_ssh()
+                up[vm.label] = True
+            except Exception as e:
+                up[vm.label] = False
+                record(f"boot_ssh_key_{vm.label}", False, str(e))
+        if not up["a"]:
+            raise SystemExit(finish())
+        record("boot_ssh_key", True)
+
+        ci = {}
+
+        def cloud_init(vm):
+            def f():
+                st = vm.wait_cloud_init()
+                ci[vm.label] = st
+                errs = list(st.get("errors") or []) + list(st.get("recoverable_errors", {}).get("ERROR", []) if isinstance(st.get("recoverable_errors"), dict) else [])
+                if st.get("status") != "done" or errs:
+                    return f"status={st.get('status')} errors={errs}"
+            return f
+
+        check("cloud_init_done_no_errors", cloud_init(a))
+        if up.get("b"):
+            try:
+                b.wait_cloud_init()
+            except Exception:
+                pass
+
+        check("ssh_password_login", lambda: (lambda r: True if r.returncode == 0 and r.stdout.strip() == "pwok" else f"rc={r.returncode} {r.stderr.strip()}")(a.ssh("echo pwok", password=pw1)))
+        check("hostname", lambda: (lambda h: True if h == HOSTNAME else f"got {h!r}")(a.ssh("hostname").stdout.strip()))
+        check("fqdn", lambda: (lambda h: True if h == FQDN else f"got {h!r}")(a.ssh("hostname -f").stdout.strip()))
+
+        def disk():
+            size = int(a.ssh("df -B1 --output=size / | tail -1").stdout.strip())
+            return True if size > 17 * GiB else f"root fs {size / GiB:.2f} GiB"
+
+        check("root_fs_grown", disk)
+
+        def net():
+            link = a.ssh("ip -o link show eth0").returncode
+            route = a.ssh("ip route show default").stdout
+            if link != 0:
+                return "no interface named eth0"
+            if "dev eth0" not in route:
+                return f"default route: {route.strip()!r}"
+
+        check("nic_eth0_default_route", net)
+        check("dns_resolves", lambda: True if a.ssh("getent hosts example.com").returncode == 0 else "getent failed")
+
+        def first_boot():
+            m = wait_marker(a)
+            if m is None:
+                return "first-boot update marker missing"
+            parts = m.split()
+            if len(parts) < 2 or parts[1] != "0":
+                return f"marker {m!r}"
+
+        check("first_boot_update", first_boot)
+
+        def agent():
+            if not a.wait_agent():
+                return "no answer to guest-ping"
+
+        check("agent_ping", agent)
+        check("agent_osinfo", lambda: True if a.qga("guest-get-osinfo").get("name") else "empty osinfo")
+
+        def exec_ok():
+            code, out = a.qga_exec("/bin/sh", ["-c", "echo ok"])
+            return True if code == 0 and out.strip() == "ok" else f"code={code} out={out!r}"
+
+        check("agent_exec", exec_ok)
+        check("agent_network_interfaces", lambda: True if any(i.get("name") == "eth0" for i in a.qga("guest-network-get-interfaces")) else "eth0 missing")
+        check("agent_fsfreeze_status", lambda: True if a.qga("guest-fsfreeze-status") == "thawed" else "unexpected status")
+
+        def file_ops():
+            h = a.qga("guest-file-open", {"path": "/tmp/vmarea-qga-test", "mode": "w"})
+            a.qga("guest-file-write", {"handle": h, "buf-b64": base64.b64encode(b"qga-file-ok").decode()})
+            a.qga("guest-file-close", {"handle": h})
+            got = a.ssh("cat /tmp/vmarea-qga-test").stdout.strip()
+            return True if got == "qga-file-ok" else f"read back {got!r}"
+
+        check("agent_file_ops", file_ops)
+
+        keys_a = {}
+
+        def keys():
+            keys_a["a"] = a.host_keys()
+            keys_a["b"] = b.host_keys() if up.get("b") else set()
+            if not keys_a["a"]:
+                return "no host keys"
+            if not keys_a["b"]:
+                return "second instance has no host keys"
+            if keys_a["a"] & keys_a["b"]:
+                return "host keys shared between instances"
+
+        check("ssh_host_keys_unique_per_instance", keys)
+
+        def mid():
+            ma = a.ssh("cat /etc/machine-id").stdout.strip()
+            mb = b.ssh("cat /etc/machine-id").stdout.strip()
+            return True if ma and mb and ma != mb else f"machine-id a={ma!r} b={mb!r}"
+
+        check("machine_id_unique_per_instance", mid)
+
+        def console():
+            g = a.ssh("systemctl is-active getty@tty1").stdout.strip()
+            p = a.ssh("passwd -S root").stdout.split()
+            if g != "active":
+                return f"getty@tty1 is {g!r}"
+            if len(p) < 2 or p[1] != "P":
+                return f"root password status {p[1:2]}"
+
+        check("console_getty_root_password", console)
+
+        b.kill()
+        shutdown(a)
+        iid_a2 = secrets.token_hex(20)
+        a.start(a.make_seed(iid_a2, pw2, pkg_up))
+        try:
+            a.wait_ssh()
+            a.wait_cloud_init()
+        except Exception as e:
+            record("reset_boot", False, str(e))
+        else:
+            check("reset_new_password_works", lambda: (lambda r: True if r.returncode == 0 else f"rc={r.returncode} {r.stderr.strip()}")(a.ssh("true", password=pw2)))
+            check("reset_old_password_rejected", lambda: True if a.ssh("true", password=pw1).returncode != 0 else "old password still accepted")
+            check("reset_host_keys_unchanged", lambda: True if a.host_keys() == keys_a["a"] else "host keys changed after reset")
+            check("reset_hostname_unchanged", lambda: (lambda h: True if h == HOSTNAME else f"got {h!r}")(a.ssh("hostname").stdout.strip()))
+    finally:
+        for vm in (a, b):
+            if vm:
+                vm.kill()
+        if not args.keep:
+            shutil.rmtree(work, ignore_errors=True)
+    return finish(started)
+
+
+def finish(started=None):
+    failed = [n for n, ok in results if not ok]
+    took = f" in {int(time.time() - started)}s" if started else ""
+    print(f"{len(results) - len(failed)} passed, {len(failed)} failed{took}")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except SystemExit as e:
+        sys.exit(e.code if isinstance(e.code, int) else 1)

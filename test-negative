@@ -1,0 +1,9 @@
+#!/bin/bash
+set -u
+dir="$(cd "$(dirname "$0")" && pwd)"
+image="${1:?usage: test-negative <unmodified upstream image>}"
+if "$dir/test" "$image"; then
+    echo "NEGATIVE CASE FAILED: harness passed an unmodified upstream image"
+    exit 1
+fi
+echo "negative case ok: harness rejected the unmodified upstream image"
