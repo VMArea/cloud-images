@@ -1,0 +1,2 @@
+#!/bin/sh
+systemd-run --no-block --unit=vmarea-first-boot-update /usr/local/sbin/vmarea-first-boot-update

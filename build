@@ -1,0 +1,256 @@
+#!/usr/bin/env python3
+import argparse
+import datetime
+import hashlib
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.request
+
+import yaml
+
+ROOT = os.path.dirname(os.path.abspath(__file__))
+UA = {"User-Agent": "vmarea-cloud-images/1.0"}
+
+
+def log(msg):
+    print(f"[build] {msg}", flush=True)
+
+
+def die(msg):
+    print(f"[build] error: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def http_get(url):
+    req = urllib.request.Request(url, headers=UA)
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return r.read()
+
+
+def download(url, dest):
+    req = urllib.request.Request(url, headers=UA)
+    tmp = dest + ".part"
+    with urllib.request.urlopen(req, timeout=60) as r, open(tmp, "wb") as f:
+        shutil.copyfileobj(r, f, 1024 * 1024)
+    os.replace(tmp, dest)
+
+
+def file_hash(path, algo):
+    h = hashlib.new(algo)
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def expected_hash(sums_text, filename, fmt):
+    for line in sums_text.splitlines():
+        line = line.strip()
+        if fmt == "bsd":
+            m = re.match(r"^\S+ \((.+)\) = ([0-9a-fA-F]+)$", line)
+            if m and m.group(1) == filename:
+                return m.group(2).lower()
+        else:
+            m = re.match(r"^([0-9a-fA-F]+)\s+\*?(.+)$", line)
+            if m and m.group(2) == filename:
+                return m.group(1).lower()
+    return None
+
+
+def check_eol(spec):
+    eol = spec["eol"]
+    url = f"https://endoflife.date/api/{eol['product']}/{eol['cycle']}.json"
+    data = json.loads(http_get(url))
+    value = data.get("eol")
+    if value is True:
+        die(f"{spec['name']} {spec['version']} is end of life")
+    if isinstance(value, str):
+        if datetime.date.fromisoformat(value) <= datetime.date.today():
+            die(f"{spec['name']} {spec['version']} reached end of life on {value}")
+    log(f"eol check ok: {value}")
+    return value
+
+
+def fetch_verified(spec, cache_dir):
+    os.makedirs(cache_dir, exist_ok=True)
+    src = spec["source"]["url"]
+    fname = src.rsplit("/", 1)[1]
+    cs = spec["checksum"]
+    sums_path = os.path.join(cache_dir, cs["url"].rsplit("/", 1)[1])
+    download(cs["url"], sums_path)
+
+    signed = False
+    sig = spec.get("signature")
+    if sig:
+        sig_path = os.path.join(cache_dir, sig["url"].rsplit("/", 1)[1])
+        download(sig["url"], sig_path)
+        r = subprocess.run(
+            ["gpgv", "--keyring", sig["keyring"], sig_path, sums_path],
+            capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            die(f"signature verification failed:\n{r.stderr}")
+        signed = True
+        log("signature ok")
+
+    with open(sums_path) as f:
+        want = expected_hash(f.read(), fname, cs.get("format", "sums"))
+    if not want:
+        die(f"{fname} not listed in {cs['url']}")
+
+    img = os.path.join(cache_dir, fname)
+    if not os.path.exists(img) or file_hash(img, cs["algo"]) != want:
+        log(f"downloading {src}")
+        download(src, img)
+    got = file_hash(img, cs["algo"])
+    if got != want:
+        os.remove(img)
+        die(f"checksum mismatch for {fname}: expected {want}, got {got}")
+    log(f"checksum ok ({cs['algo']})")
+    return img, want, signed
+
+
+def customize_args(spec, workdir, pkglist_name):
+    pm = spec["package_manager"]
+    mode = spec["first_boot_update"]
+    if pm not in ("apt", "dnf"):
+        die(f"unsupported package_manager {pm}")
+    a = []
+
+    def run(cmd):
+        a.extend(["--run-command", cmd])
+
+    netup = (
+        "if [ -L /etc/resolv.conf ]; then readlink /etc/resolv.conf > /vmarea-resolv-link; fi; "
+        "rm -f /etc/resolv.conf; echo 'nameserver 169.254.2.3' > /etc/resolv.conf; "
+        "ip link set eth0 up; ip addr add 169.254.2.15/16 dev eth0; ip route add default via 169.254.2.2; "
+    )
+    if pm == "apt":
+        run(
+            netup + "export DEBIAN_FRONTEND=noninteractive; apt-get update && "
+            "apt-get -y -o Dpkg::Options::=--force-confnew install qemu-guest-agent cloud-init unattended-upgrades"
+        )
+    else:
+        run(netup + "dnf -y install qemu-guest-agent cloud-init")
+        run(
+            "f=/etc/sysconfig/qemu-ga; [ -f $f ] && "
+            "sed -i -E 's/guest-exec(-status)?,?//g; s/guest-file-[a-z-]+,?//g' $f; true"
+        )
+    run("systemctl enable qemu-guest-agent || true")
+    a.extend(["--mkdir", "/etc/vmarea"])
+    a.extend(["--write", f"/etc/vmarea/image.conf:FIRST_BOOT_UPDATE={mode}\n"])
+    a.extend(["--upload", f"{ROOT}/files/90-vmarea.cfg:/etc/cloud/cloud.cfg.d/90-vmarea.cfg"])
+    a.extend(["--upload", f"{ROOT}/files/00-vmarea-sshd.conf:/etc/ssh/sshd_config.d/00-vmarea.conf"])
+    a.extend(["--upload", f"{ROOT}/files/first-boot-update-{pm}:/usr/local/sbin/vmarea-first-boot-update"])
+    a.extend(["--chmod", "0755:/usr/local/sbin/vmarea-first-boot-update"])
+    if pm == "apt" and mode == "security" and spec["name"] == "debian":
+        run("sed -i '/label=Debian\";/d' /etc/apt/apt.conf.d/50unattended-upgrades")
+
+    if pm == "apt":
+        run(f"dpkg-query -W -f '${{Package}} ${{Version}}\\n' > /{pkglist_name}")
+    else:
+        run(f"rpm -qa --qf '%{{NAME}} %{{VERSION}}-%{{RELEASE}}\\n' > /{pkglist_name}")
+
+    if pm == "apt":
+        run("apt-get clean; rm -rf /var/lib/apt/lists/*")
+    else:
+        run("dnf clean all; rm -rf /var/cache/dnf")
+    run(
+        "rm -f /etc/resolv.conf; "
+        "if [ -f /vmarea-resolv-link ]; then ln -s \"$(cat /vmarea-resolv-link)\" /etc/resolv.conf; fi; "
+        "rm -f /vmarea-resolv-link"
+    )
+    run("rm -f /etc/ssh/ssh_host_*")
+    run("find /var/log -type f -exec truncate -s0 {} +; find /var/log -type f -name '*.gz' -delete")
+    run("rm -rf /tmp/* /var/tmp/* /root/.bash_history /root/.ssh")
+    run("cloud-init clean --logs --seed")
+    a.extend(["--truncate", "/etc/machine-id"])
+    a.extend(["--mkdir", "/var/lib/cloud/scripts/per-once"])
+    wrapper = "/var/lib/cloud/scripts/per-once/10-vmarea-first-boot-update"
+    a.extend(["--upload", f"{ROOT}/files/per-once-wrapper:{wrapper}"])
+    a.extend(["--chmod", f"0755:{wrapper}"])
+    return a
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Build a customised cloud image from an OS recipe")
+    ap.add_argument("recipe")
+    ap.add_argument("--cache", default=os.path.join(ROOT, "cache"))
+    ap.add_argument("--output", default=os.path.join(ROOT, "output"))
+    args = ap.parse_args()
+
+    with open(args.recipe) as f:
+        spec = yaml.safe_load(f)
+    name, version = spec["name"], str(spec["version"])
+    spec["version"] = version
+    started = datetime.datetime.now(datetime.timezone.utc)
+
+    eol = check_eol(spec)
+    img, src_sum, signed = fetch_verified(spec, os.path.join(args.cache, f"{name}-{version}"))
+
+    os.makedirs(args.output, exist_ok=True)
+    base = f"{name}-{version}-{started.strftime('%Y%m%d')}"
+    out = os.path.join(args.output, base + ".qcow2")
+
+    work = tempfile.mkdtemp(prefix=f"build-{name}-{version}-")
+    try:
+        env = dict(os.environ, LIBGUESTFS_BACKEND="direct", TMPDIR=work)
+        work_img = os.path.join(work, "image.qcow2")
+        subprocess.run(["qemu-img", "convert", "-O", "qcow2", img, work_img], check=True)
+        pkglist = "vmarea-pkglist"
+        cmd = ["virt-customize", "-a", work_img] + customize_args(spec, work, pkglist)
+        log("customising")
+        subprocess.run(cmd, check=True, env=env)
+        subprocess.run(["virt-copy-out", "-a", work_img, "/" + pkglist, work], check=True, env=env)
+        subprocess.run(["guestfish", "-a", work_img, "-i", "rm", "/" + pkglist], check=True, env=env)
+        log("sparsifying")
+        tmp_out = out + ".part"
+        subprocess.run(
+            ["virt-sparsify", "--compress", "--convert", "qcow2", "--tmp", work, work_img, tmp_out],
+            check=True, env=env,
+        )
+        os.replace(tmp_out, out)
+
+        pkgs = []
+        with open(os.path.join(work, pkglist)) as f:
+            for line in f:
+                p = line.split(None, 1)
+                if len(p) == 2:
+                    pkgs.append({"name": p[0], "version": p[1].strip()})
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+    digest = file_hash(out, "sha256")
+    with open(out + ".sha256", "w") as f:
+        f.write(f"{digest}  {os.path.basename(out)}\n")
+    manifest = {
+        "name": name,
+        "version": version,
+        "file": os.path.basename(out),
+        "sha256": digest,
+        "size_bytes": os.path.getsize(out),
+        "build_date": started.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "source_url": spec["source"]["url"],
+        "source_checksum": {"algo": spec["checksum"]["algo"], "value": src_sum},
+        "source_signature_verified": signed,
+        "eol": eol,
+        "first_boot_update": spec["first_boot_update"],
+        "package_count": len(pkgs),
+        "packages": pkgs,
+    }
+    with open(os.path.join(args.output, base + ".json"), "w") as f:
+        json.dump(manifest, f, indent=2)
+        f.write("\n")
+    log(f"done: {out} ({manifest['size_bytes']} bytes)")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except subprocess.CalledProcessError as e:
+        die(f"command failed ({e.returncode}): {e.cmd[0]}")

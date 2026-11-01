@@ -1,0 +1,17 @@
+name: ubuntu
+version: "24.04"
+arch: amd64
+package_manager: apt
+first_boot_update: security
+source:
+  url: https://cloud-images.ubuntu.com/noble/current/noble-server-cloudimg-amd64.img
+checksum:
+  url: https://cloud-images.ubuntu.com/noble/current/SHA256SUMS
+  algo: sha256
+  format: sums
+signature:
+  url: https://cloud-images.ubuntu.com/noble/current/SHA256SUMS.gpg
+  keyring: /usr/share/keyrings/ubuntu-cloudimage-keyring.gpg
+eol:
+  product: ubuntu
+  cycle: "24.04"

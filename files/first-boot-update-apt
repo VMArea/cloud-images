@@ -1,0 +1,21 @@
+#!/bin/sh
+. /etc/vmarea/image.conf
+LOG=/var/log/vmarea-first-boot-update.log
+exec >>"$LOG" 2>&1
+export DEBIAN_FRONTEND=noninteractive
+retry() {
+    n=0
+    until "$@"; do
+        n=$((n + 1))
+        [ "$n" -ge 60 ] && return 1
+        sleep 5
+    done
+}
+retry apt-get update
+case "$FIRST_BOOT_UPDATE" in
+    security) retry unattended-upgrade -d ;;
+    full) retry apt-get -y -o Dpkg::Options::=--force-confold dist-upgrade ;;
+esac
+rc=$?
+mkdir -p /var/lib/vmarea
+echo "$FIRST_BOOT_UPDATE $rc $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /var/lib/vmarea/first-boot-update

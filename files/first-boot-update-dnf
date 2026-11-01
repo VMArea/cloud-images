@@ -1,0 +1,11 @@
+#!/bin/sh
+. /etc/vmarea/image.conf
+LOG=/var/log/vmarea-first-boot-update.log
+exec >>"$LOG" 2>&1
+case "$FIRST_BOOT_UPDATE" in
+    security) dnf -y upgrade --security ;;
+    full) dnf -y upgrade ;;
+esac
+rc=$?
+mkdir -p /var/lib/vmarea
+echo "$FIRST_BOOT_UPDATE $rc $(date -u +%Y-%m-%dT%H:%M:%SZ)" > /var/lib/vmarea/first-boot-update
