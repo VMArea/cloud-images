@@ -336,6 +336,14 @@ def grow_in_place(img, partition, size, env):
     gf(img, env, *cmds)
 
 
+def repo_commit():
+    marker = os.path.join(ROOT, "COMMIT")
+    if os.path.exists(marker):
+        return open(marker).read().strip()
+    r = subprocess.run(["git", "-C", ROOT, "rev-parse", "HEAD"], capture_output=True, text=True)
+    return r.stdout.strip() or None
+
+
 def main():
     ap = argparse.ArgumentParser(description="Build a customised cloud image from an OS recipe")
     ap.add_argument("recipe")
@@ -436,6 +444,7 @@ def main():
         "source_signature_verified": signed,
         "eol": eol,
         "first_boot_update": spec["first_boot_update"],
+        "commit": repo_commit(),
         "package_count": len(pkgs),
         "changes_from_source": changes,
         "pending_updates_after_build": pending,
