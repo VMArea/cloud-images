@@ -355,8 +355,17 @@ $o | ConvertTo-Json -Compress
         except Exception:
             info = {"raw": out}
         log("sysprep")
-        rc, out, err = vm.qga.ps_retry(
-            "Start-Process C:\\Windows\\System32\\Sysprep\\sysprep.exe -WorkingDirectory 'C:\\Program Files\\Cloudbase Solutions\\Cloudbase-Init\\conf' -ArgumentList '/generalize /oobe /shutdown /mode:vm /unattend:Unattend.xml'", 60)
+        sysprep_ps = r"""
+$a = New-ScheduledTaskAction -Execute 'C:\Windows\System32\Sysprep\sysprep.exe' -Argument '/generalize /oobe /shutdown /mode:vm /unattend:Unattend.xml' -WorkingDirectory 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init\conf'
+Register-ScheduledTask -TaskName vmarea-sysprep -Action $a -User Administrator -Password '@@PW@@' -RunLevel Highest -Force | Out-Null
+Start-ScheduledTask -TaskName vmarea-sysprep
+$n = 0
+while (-not (Get-Process sysprep -ErrorAction SilentlyContinue) -and $n -lt 60) { Start-Sleep 1; $n++ }
+Unregister-ScheduledTask -TaskName vmarea-sysprep -Confirm:$false
+(Get-Process sysprep -IncludeUserName | Select-Object -First 1).UserName
+""".replace("@@PW@@", state["secrets"][0])
+        rc, out, err = vm.qga.ps_retry(sysprep_ps, 180)
+        log("sysprep as " + out.strip())
         if not vm.wait_exit(1800):
             try:
                 rc, out, err = vm.qga.ps("Get-Content C:\\Windows\\System32\\Sysprep\\Panther\\setupact.log -Tail 40", 60)

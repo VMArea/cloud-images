@@ -26,6 +26,7 @@ $readme = 'These files let the control panel set your password, hostname and net
 [IO.File]::WriteAllText('C:\ProgramData\VMArea\README.txt', $readme + "`r`n", (New-Object Text.UTF8Encoding($false)))
 New-Item -ItemType Directory -Force "$cb\LocalScripts" | Out-Null
 Copy-Item "${root}scripts\baseline.ps1" "$cb\LocalScripts\vmarea-baseline.ps1" -Force
+Copy-Item "${root}scripts\hostname.ps1" "$cb\LocalScripts\vmarea-hostname.ps1" -Force
 Remove-Item -Recurse -Force "$cb\log\*" -ErrorAction SilentlyContinue
 $esp = Get-Partition -DiskNumber 0 | Where-Object { $_.GptType -eq '{c12a7328-f81f-11d2-ba4b-00a0c93ec93b}' } | Select-Object -First 1
 $esp | Add-PartitionAccessPath -AccessPath 'S:\' -ErrorAction Stop
@@ -34,8 +35,4 @@ Copy-Item 'S:\EFI\Microsoft\Boot\bootmgfw.efi' 'S:\EFI\Boot\bootx64.efi' -Force
 $esp | Remove-PartitionAccessPath -AccessPath 'S:\'
 Remove-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name DefaultPassword -ErrorAction SilentlyContinue
 Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name AutoAdminLogon -Value 0
-if ([Environment]::OSVersion.Version.Build -ge 26100) {
-    Copy-Item "${root}scripts\shell.ps1" 'C:\ProgramData\VMArea\shell.ps1' -Force
-    Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name Shell -Value 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\ProgramData\VMArea\shell.ps1'
-}
 Write-Output 'prepared'
