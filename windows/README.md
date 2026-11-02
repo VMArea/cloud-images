@@ -36,3 +36,11 @@ The test boots the image on a copy-on-write overlay grown to 60G with a config d
 | Windows Server 2025 | 26100.33650 | KB5043080 checkpoint, KB5126646, .NET KB5127690 | 55 passed, 0 failed on both a v3-flag CPU and host |
 
 QEMU 8.2 has no named `x86-64-v3` model, so the 2025 test uses `qemu64` with the v3 feature flags. Setup itself does not run on that model (error 0x800706BA), so 2025 is built on `host`. The 2019 cumulative update is installed with `wusa` because DISM 10.0.17763 rejects the package (error 50).
+
+## Server 2025 first logon (2026-11-02)
+
+On a sysprepped Server 2025 image the first Explorer start in a new profile failed fast (0xc0000409, Explorer 10.0.26100.33648) about 4 times in 5 and left a grey RDP desktop. The image before sysprep never showed it. The AppX log shows the shell packages (StartMenuExperienceHost, ShellExperienceHost, Client.CBS, Client.Core) being re-registered for the new user after Explorer had already died. Policies, the cumulative update, the apps and cleanup are not the cause.
+
+`files/scripts/shell.ps1` is set as the Winlogon shell on builds 26100 and later. At a profile's first logon it registers those four packages and then starts Explorer. With Shell set to plain `explorer.exe` 3 of 3 first logons crashed; with the wrapper 0 of 8 did. The test now logs in over RDP first and requires `explorer.exe` in the user session for 60s with no Explorer crash events. Results on the rebuilt image `windows-2025-20261102`: 57 passed on both the v3-flag CPU and host. 2019 and 2022 also pass the check (56 and 56).
+
+`windows/build --stop-after <phase>` halts a build after a phase so the disk can be copied and tested, which is how the cause was bisected.

@@ -34,4 +34,8 @@ Copy-Item 'S:\EFI\Microsoft\Boot\bootmgfw.efi' 'S:\EFI\Boot\bootx64.efi' -Force
 $esp | Remove-PartitionAccessPath -AccessPath 'S:\'
 Remove-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name DefaultPassword -ErrorAction SilentlyContinue
 Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name AutoAdminLogon -Value 0
+if ([Environment]::OSVersion.Version.Build -ge 26100) {
+    Copy-Item "${root}scripts\shell.ps1" 'C:\ProgramData\VMArea\shell.ps1' -Force
+    Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name Shell -Value 'powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\ProgramData\VMArea\shell.ps1'
+}
 Write-Output 'prepared'

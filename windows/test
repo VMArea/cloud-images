@@ -211,6 +211,54 @@ def facts(vm):
         raise
 
 
+EXPLORER_PS = r'''
+$p = @(Get-Process explorer -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -gt 0 })
+ConvertTo-Json -Compress -InputObject @($p | ForEach-Object { "$($_.Id):$($_.SessionId)" })
+'''
+CRASH_PS = r'''
+$t = [datetime]::Parse('%s')
+$e = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; Id = 1000, 1002; StartTime = $t } -ErrorAction SilentlyContinue | Where-Object { $_.Message -match 'explorer' } | ForEach-Object { ([string]$_.Message).Substring(0, 160) })
+ConvertTo-Json -Compress -InputObject @($e)
+'''
+
+
+def desktop_check(vm, password, label):
+    exe = shutil.which("xvfb-run") and (shutil.which("xfreerdp3") or shutil.which("xfreerdp"))
+    if not exe:
+        return check("desktop session (xvfb or freerdp missing)", False)
+    rc, out, err = vm.qga.ps_retry("(Get-Date).ToUniversalTime().ToString('o')", 60)
+    t0 = out.strip().splitlines()[-1]
+    cert = "/cert:ignore" if "xfreerdp3" in exe else "/cert-ignore"
+    proc = subprocess.Popen(["xvfb-run", "-a", exe, "/v:127.0.0.1:%d" % RDP_PORT, "/u:Administrator", "/p:" + password, cert, "/size:1024x768", "/sec:nla"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+    ids = set()
+    gone = False
+    try:
+        time.sleep(30)
+        end = time.time() + 60
+        first = True
+        while time.time() < end:
+            rc, out, err = vm.qga.ps_retry(EXPLORER_PS, 60)
+            cur = set(json.loads(out.strip().splitlines()[-1]))
+            if first and not cur:
+                time.sleep(15)
+                continue
+            first = False
+            if not cur:
+                gone = True
+            ids |= cur
+            time.sleep(5)
+        rc, out, err = vm.qga.ps_retry(CRASH_PS % t0, 120)
+        crashes = json.loads(out.strip().splitlines()[-1])
+    finally:
+        try:
+            os.killpg(proc.pid, 15)
+        except OSError:
+            pass
+    check("explorer.exe runs in the RDP session for 60s (%s)" % label, bool(ids) and len(ids) == 1 and not gone, (sorted(ids), gone))
+    check("no Explorer crash events after RDP logon (%s)" % label, not crashes, crashes[:2])
+
+
 def rdp_auth(password, port=RDP_PORT, user="Administrator"):
     exe = shutil.which("xfreerdp3") or shutil.which("xfreerdp")
     if not exe:
@@ -307,6 +355,7 @@ def main():
         for _ in range(6):
             logon(vm, "Wrong" + secrets.token_hex(4))
         check("password still works after 6 failed logons (no lockout)", logon(vm, pw1))
+        desktop_check(vm, pw1, "first boot")
         rdp = rdp_auth(pw1)
         if rdp is None:
             check("RDP NLA login (freerdp not installed)", False, "xfreerdp missing")

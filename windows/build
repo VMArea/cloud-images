@@ -222,6 +222,7 @@ def main():
     ap.add_argument("recipe")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--keep", action="store_true")
+    ap.add_argument("--stop-after")
     ap.add_argument("--refresh", action="store_true")
     ap.add_argument("--ram", type=int)
     a = ap.parse_args()
@@ -252,6 +253,15 @@ def main():
         state["done"].append(p)
         with open(state_path, "w") as f:
             json.dump(state, f)
+        if a.stop_after == p:
+            try:
+                vm.qga.exec("shutdown.exe", ["/s", "/t", "2", "/f"], 30)
+            except QGAError:
+                pass
+            vm.wait_exit(300)
+            vm.stop()
+            log("stopped after " + p)
+            sys.exit(0)
 
     check_eol(r["eol"])
     win_iso = os.path.join(ISO_CACHE, r["source"]["file"])
