@@ -51,5 +51,12 @@ if ($setup.OOBEInProgress -eq 0 -and $setup.SystemSetupInProgress -eq 0) {
     Remove-Item 'C:\Windows\Panther\unattend.xml', 'C:\Windows\System32\Sysprep\Unattend.xml', 'C:\Program Files\Cloudbase Solutions\Cloudbase-Init\conf\Unattend.xml' -Force -ErrorAction SilentlyContinue
     Remove-Item 'C:\Windows\Panther\Unattend' -Recurse -Force -ErrorAction SilentlyContinue
 }
+Set-Reg 'HKLM:\SOFTWARE\Policies\Microsoft\EdgeUpdate' CreateDesktopShortcutDefault 0
+$chrome = 'C:\Program Files\Google\Chrome\Application'
+if (Test-Path $chrome) {
+    foreach ($n in 'initial_preferences', 'master_preferences') {
+        Set-Content "$chrome\$n" '{"distribution":{"do_not_create_desktop_shortcut":true,"do_not_create_quick_launch_shortcut":true,"do_not_create_taskbar_shortcut":true}}' -Encoding ASCII
+    }
+}
 Write-Output 'baseline applied'
 exit 0

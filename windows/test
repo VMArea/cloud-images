@@ -36,13 +36,9 @@ def sh(*a, **kw):
 def config_drive(path, stage, instance, password):
     if os.path.exists(stage):
         shutil.rmtree(stage)
-    meta = {
-        "uuid": instance, "hostname": HOSTNAME, "name": HOSTNAME, "admin_pass": password, "launch_index": 0,
-        "availability_zone": "nova", "meta": {}, "public_keys": {}, "project_id": "vmarea",
-        "network_config": {"content_path": "/content/0000", "link": "/dev/null"},
-    }
+    meta = {"uuid": instance, "network_config": {"content_path": "/content/0000"}}
     eni = "auto lo\niface lo inet loopback\n\nauto eth0\niface eth0 inet dhcp\n    hwaddress ether %s\n    dns-nameservers 1.1.1.1\n" % MAC
-    ud = "#cloud-config\nhostname: %s\nfqdn: %s.vmarea.test\nmanage_etc_hosts: true\nuser: Administrator\npassword: %s\nchpasswd:\n  expire: False\n" % (HOSTNAME, HOSTNAME, password)
+    ud = "\n".join(["#cloud-config", "hostname: " + HOSTNAME, "manage_etc_hosts: true", "fqdn: " + HOSTNAME, "password: " + password, "chpasswd:", "  expire: False", "users:", "  - default", ""])
     for v in ("latest", "2012-08-10"):
         d = os.path.join(stage, "openstack", v)
         os.makedirs(d)
@@ -222,6 +218,35 @@ ConvertTo-Json -Compress -InputObject @($e)
 '''
 
 
+SHELL_PS = r'''
+$out = 'C:\Windows\Temp\vmarea-shellcheck.json'
+Remove-Item $out -ErrorAction SilentlyContinue
+$script = @'
+Add-Type -TypeDefinition 'using System; using System.Text; using System.Collections.Generic; using System.Runtime.InteropServices; public class VmW { public delegate bool CB(IntPtr h, IntPtr l); [DllImport("user32.dll")] public static extern bool EnumWindows(CB cb, IntPtr l); [DllImport("user32.dll")] public static extern int GetClassName(IntPtr h, StringBuilder s, int n); [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h); [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p); public static List<string> Visible(uint self) { var r = new List<string>(); EnumWindows((h, l) => { var s = new StringBuilder(256); GetClassName(h, s, 256); uint p; GetWindowThreadProcessId(h, out p); if (IsWindowVisible(h)) r.Add(s.ToString() + (p == self ? "#self" : "")); return true; }, IntPtr.Zero); return r; } }'
+$c = [VmW]::Visible([uint32]$PID)
+$r = [ordered]@{ tray = ($c -contains 'Shell_TrayWnd'); desktop = (($c -contains 'Progman') -or ($c -contains 'WorkerW')); console = @($c | Where-Object { $_ -eq 'ConsoleWindowClass' -or $_ -eq 'CASCADIA_HOSTING_WINDOW_CLASS' }).Count; apps = @(Get-StartApps | ForEach-Object { $_.Name }); servermanager = @(Get-Process ServerManager -ErrorAction SilentlyContinue).Count }
+$r | ConvertTo-Json -Compress | Set-Content 'C:\Windows\Temp\vmarea-shellcheck.json'
+'@
+Set-Content C:\Windows\Temp\vmarea-shellcheck-run.ps1 $script
+$u = (Get-Process explorer -IncludeUserName -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -gt 0 } | Select-Object -First 1).UserName
+if (-not $u) { $u = "$env:COMPUTERNAME\Administrator" }
+$a = New-ScheduledTaskAction -Execute conhost.exe -Argument '--headless powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\Windows\Temp\vmarea-shellcheck-run.ps1'
+$p = New-ScheduledTaskPrincipal -UserId $u -LogonType Interactive
+Register-ScheduledTask -TaskName vmarea-shellcheck -Action $a -Principal $p -Force | Out-Null
+Start-ScheduledTask -TaskName vmarea-shellcheck
+for ($i = 0; $i -lt 30; $i++) { if (Test-Path $out) { break }; Start-Sleep 1 }
+Unregister-ScheduledTask -TaskName vmarea-shellcheck -Confirm:$false -ErrorAction SilentlyContinue
+$res = if (Test-Path $out) { Get-Content $out -Raw } else { '{}' }
+Remove-Item $out, C:\Windows\Temp\vmarea-shellcheck-run.ps1 -ErrorAction SilentlyContinue
+$res
+'''
+APPS_PS = r'''
+$sm = 'C:\ProgramData\Microsoft\Windows\Start Menu\Programs'
+$l = @(Get-ChildItem $sm -Recurse -Filter *.lnk -ErrorAction SilentlyContinue | ForEach-Object { $_.BaseName })
+ConvertTo-Json -Compress -InputObject @{ lnk = $l; readme = (Test-Path C:\ProgramData\VMArea\README.txt); desktops = @(Get-ChildItem C:\Users\Public\Desktop, C:\Users\Administrator\Desktop -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne 'desktop.ini' }).Count }
+'''
+
+
 def desktop_check(vm, password, label):
     exe = shutil.which("xvfb-run") and (shutil.which("xfreerdp3") or shutil.which("xfreerdp"))
     if not exe:
@@ -250,6 +275,10 @@ def desktop_check(vm, password, label):
             time.sleep(5)
         rc, out, err = vm.qga.ps_retry(CRASH_PS % t0, 120)
         crashes = json.loads(out.strip().splitlines()[-1])
+        rc, out, err = vm.qga.ps_retry(SHELL_PS, 120)
+        sh = json.loads(out.strip().splitlines()[-1])
+        rc, out, err = vm.qga.ps_retry(APPS_PS, 60)
+        ap = json.loads(out.strip().splitlines()[-1])
     finally:
         try:
             os.killpg(proc.pid, 15)
@@ -257,6 +286,11 @@ def desktop_check(vm, password, label):
             pass
     check("explorer.exe runs in the RDP session for 60s (%s)" % label, bool(ids) and len(ids) == 1 and not gone, (sorted(ids), gone))
     check("no Explorer crash events after RDP logon (%s)" % label, not crashes, crashes[:2])
+    check("taskbar (Shell_TrayWnd) and desktop window present in the user session (%s)" % label, bool(sh.get("tray")) and bool(sh.get("desktop")), sh)
+    check("Server Manager not running and no console window visible at logon (%s)" % label, sh.get("servermanager") == 0 and sh.get("console") == 0, sh)
+    names = " ".join(sh.get("apps", [])).lower()
+    check("Chrome, 7-Zip and Notepad++ visible in the Start menu, README present, nothing on desktops (%s)" % label,
+          all(n in names for n in ("chrome", "7-zip", "notepad++")) and ap.get("readme") is True and ap.get("desktops") == 0, (sh.get("apps"), ap.get("readme"), ap.get("desktops")))
 
 
 def rdp_auth(password, port=RDP_PORT, user="Administrator"):

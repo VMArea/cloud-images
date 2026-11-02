@@ -39,8 +39,10 @@ QEMU 8.2 has no named `x86-64-v3` model, so the 2025 test uses `qemu64` with the
 
 ## Server 2025 first logon (2026-11-02)
 
-On a sysprepped Server 2025 image the first Explorer start in a new profile failed fast (0xc0000409, Explorer 10.0.26100.33648) about 4 times in 5 and left a grey RDP desktop. The image before sysprep never showed it. The AppX log shows the shell packages (StartMenuExperienceHost, ShellExperienceHost, Client.CBS, Client.Core) being re-registered for the new user after Explorer had already died. Policies, the cumulative update, the apps and cleanup are not the cause.
+Cause: sysprep was started through the guest agent, which runs as Local System. Microsoft documents that sysprep run as Local System skips AppX registration of XAML shell packages (Client.CBS, Client.Core, Microsoft.UI.Xaml.CBS) and Explorer then fails on first logon. The dump of the crashed Explorer (10.0.26100.33648) shows a fail-fast (0xc0000409, FAST_FAIL_FATAL_APP_EXIT, HRESULT 0x8000FFFF) in `explorer!CTray::Init` (tray.cpp line 737) right after `XamlExtensions.IsExtensionAvailable("WindowsUdk.UI.Shell.TaskbarControllerExtension", "Taskbar")` returned false. The extension is declared by MicrosoftWindows.Client.Core. Only the first logon on the machine crashed; a second user right after was fine.
 
-`files/scripts/shell.ps1` is set as the Winlogon shell on builds 26100 and later. At a profile's first logon it registers those four packages and then starts Explorer. With Shell set to plain `explorer.exe` 3 of 3 first logons crashed; with the wrapper 0 of 8 did. The test now logs in over RDP first and requires `explorer.exe` in the user session for 60s with no Explorer crash events. Results on the rebuilt image `windows-2025-20261102`: 57 passed on both the v3-flag CPU and host. 2019 and 2022 also pass the check (56 and 56).
+Not the cause: the deprecated SkipMachineOOBE/SkipUserOOBE settings (removed, still 3 of 3 crashes), waiting up to 20 minutes before the first logon, policies, the cumulative update, the apps and cleanup.
+
+Fix: the build starts sysprep as Administrator through a one-shot scheduled task (removed as soon as sysprep is running), with the stock `explorer.exe` shell. 3 of 3 first logons then gave a taskbar and no crash.
 
 `windows/build --stop-after <phase>` halts a build after a phase so the disk can be copied and tested, which is how the cause was bisected.
