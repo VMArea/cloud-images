@@ -2,7 +2,7 @@
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
 need rclone python3
-KEEP=3
+KEEP=1
 DRY=1
 stage=
 for a in "$@"; do

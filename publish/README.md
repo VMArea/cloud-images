@@ -15,7 +15,7 @@ publish/release output --stage stage --prev-dir <older-manifests> [--upload [--y
 - `changes` writes `<image>.changes.txt` by comparing package lists in the manifests with the newest earlier build of the same OS and version, in the output dir or `--prev-dir`.
 - `sign` writes `SHA256SUMS` for a release directory and signs it with cosign (`SHA256SUMS.sig` is a bundle). The key pair lives in `~/.cosign/` on the builder (`cosign.key`, `cosign.pub`, `password` mode 0600) and is generated on first use. Only `publish/cosign.pub` is committed.
 - Redistribution: only OS names in `allowed-os.txt` are processed. Ubuntu and Windows are never staged or uploaded. `release` refuses an image without a passing `<image>.test.json`.
-- `upload` needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_BUCKET`. Layout: `<os>/<version>/<date>/<files>`, `<os>/<version>/latest.json`, and `index.html` and `index.json` at the root. Retention keeps the newest three dated builds per OS and version. Dry run is the default.
+- `upload` needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_BUCKET`. Layout: `<os>/<version>/<date>/<files>`, `<os>/<version>/latest.json`, and `index.html` and `index.json` at the root. Retention keeps only the newest dated build per OS and version. Dry run is the default.
 - `status` builds the static page from the stage tree.
 
 ## Test results file
