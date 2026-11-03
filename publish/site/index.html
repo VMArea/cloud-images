@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cloud images | VMArea</title>
+<meta name="description" content="Tested, signed cloud images for KVM and QEMU with cloud-init. Rebuilt every month.">
+<meta property="og:title" content="VMArea cloud images">
+<meta property="og:description" content="Tested, signed cloud images for KVM and QEMU with cloud-init. Rebuilt every month.">
+<meta property="og:image" content="https://raw.githubusercontent.com/VMArea/cloud-images/main/.github/assets/social-preview.png">
+<link rel="preload" href="fonts/BricolageGrotesque-700.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:"Bricolage Grotesque";src:url(fonts/BricolageGrotesque-700.woff2) format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Be Vietnam Pro";src:url(fonts/BeVietnamPro-400.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Be Vietnam Pro";src:url(fonts/BeVietnamPro-500.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Be Vietnam Pro";src:url(fonts/BeVietnamPro-600.woff2) format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url(fonts/GeistMono.woff2) format("woff2");font-weight:100 900;font-display:swap}
+:root{
+  --bg:oklch(0.163 0.014 186);--card:oklch(0.203 0.016 186);--fg:oklch(0.968 0.004 180);
+  --mut:oklch(0.735 0.018 190);--line:oklch(1 0 0 / 11%);--line-strong:oklch(1 0 0 / 18%);
+  --pri:oklch(0.755 0.145 162);--pri-hover:oklch(0.8 0.14 162);--pri-fg:oklch(0.175 0.035 168);
+  --warn:oklch(0.83 0.12 80);
+  --display:"Bricolage Grotesque",system-ui,sans-serif;--sans:"Be Vietnam Pro",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html{color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:var(--pri);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--pri);outline-offset:2px;border-radius:6px}
+.wrap{max-width:1040px;margin:0 auto;padding:0 clamp(20px,4vw,40px)}
+.nav{border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;gap:24px;height:60px}
+.brand{display:flex;align-items:center;gap:9px;font:700 16px var(--display);color:var(--fg)}
+.brand:hover{text-decoration:none}
+.crumb{color:var(--mut);font-weight:500;font-size:14px}
+.nav .sp{flex:1}
+.nav .l{color:var(--mut);font-weight:500;font-size:14px}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:6px;font:600 14px var(--sans);padding:8px 14px;border:1px solid transparent;cursor:pointer;white-space:nowrap}
+.btn:hover{text-decoration:none}
+.btn-pri{background:var(--pri);color:var(--pri-fg)}
+.btn-pri:hover{background:var(--pri-hover)}
+.btn-out{background:transparent;color:var(--fg);border-color:var(--line-strong)}
+.btn-lg{font-size:15px;padding:11px 20px}
+h1,h2{font-family:var(--display);font-weight:700;letter-spacing:-.025em;line-height:1.05;margin:0;text-wrap:balance}
+h1{font-size:clamp(36px,6vw,58px)}
+h2{font-size:clamp(26px,3.4vw,34px)}
+.m{color:var(--mut)}
+.hero{padding:clamp(48px,9vw,88px) 0 clamp(28px,5vw,40px)}
+.lead{color:var(--mut);font-size:17px;margin:16px 0 0;max-width:60ch}
+.pick{display:flex;flex-wrap:wrap;gap:8px}
+.chip{appearance:none;border:1px solid var(--line-strong);background:transparent;color:var(--fg);font:500 14px var(--sans);padding:8px 15px;border-radius:999px;cursor:pointer;transition:background-color .2s cubic-bezier(.25,1,.5,1),border-color .2s}
+.chip:hover{border-color:var(--pri)}
+.chip[aria-pressed=true]{background:var(--pri);border-color:var(--pri);color:var(--pri-fg)}
+.chip.v{font:500 13px var(--mono);padding:5px 13px}
+.versions{margin-top:12px}
+.panel{margin-top:24px;border:1px solid var(--line);border-radius:14px;background:var(--card);padding:clamp(22px,4vw,34px)}
+.panel.swap{animation:swap .35s cubic-bezier(.25,1,.5,1)}
+@keyframes swap{from{opacity:.35;transform:translateY(4px)}to{opacity:1;transform:none}}
+.head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px}
+.sub{margin:6px 0 0;color:var(--mut);font:13px var(--mono)}
+details{margin-top:26px;border-top:1px solid var(--line);padding-top:18px}
+summary{cursor:pointer;color:var(--mut);font-weight:500;font-size:14px;list-style:none;display:inline-flex;align-items:center;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"";width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .2s}
+details[open] summary::before{transform:rotate(45deg)}
+summary:hover{color:var(--fg)}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:clamp(24px,4vw,44px);margin-top:20px}
+dl{display:grid;grid-template-columns:auto 1fr;gap:10px 22px;margin:0}
+dt{color:var(--mut);font-size:14px}
+dd{margin:0}
+.mono{font:13px var(--mono)}
+.ok{color:var(--pri)}.warn{color:var(--warn)}
+.note{color:var(--mut);font-size:13px;margin:6px 0 0;max-width:42ch}
+.files{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:20px;font-size:14px}
+.cmdhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;color:var(--mut);font-size:14px}
+.copy{appearance:none;background:none;border:1px solid var(--line-strong);color:var(--fg);font:500 12px var(--sans);padding:4px 10px;border-radius:6px;cursor:pointer}
+.copy:hover{border-color:var(--pri)}
+pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:14px 16px;font:12.5px/1.75 var(--mono);white-space:pre-wrap;word-break:break-all;color:var(--fg)}
+.foot{margin-top:72px;border-top:1px solid var(--line);padding:22px 0 48px;color:var(--mut);font-size:13px;display:flex;flex-wrap:wrap;gap:8px 24px}
+.foot span{max-width:70ch}
+noscript ul{line-height:2}
+@media (max-width:720px){.grid{grid-template-columns:1fr}.nav .crumb{display:none}.nav .wrap{gap:16px}}
+@media (prefers-reduced-motion:reduce){.panel.swap{animation:none}.chip,summary::before{transition:none}}
+</style>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="https://vmarea.com"><svg viewBox="0 0 690 704" width="22" height="22" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="704" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1a838c"/><stop offset="1" stop-color="#0c6974"/></linearGradient></defs><g fill="url(#lg)"><polygon points="192,286 326,351 326,698 192,698"/><polygon points="360,386 678,544 678,695 359,544"/><polygon points="360,12 492,12 492,417 359,353"/><polygon points="14,13 326,170 326,319 13,168"/><polygon points="527,254 677,329 678,444 527,445"/><polygon points="13,268 160,268 160,450 13,380"/></g></svg>VMArea</a>
+  <span class="crumb">Cloud images</span>
+  <span class="sp"></span>
+  <a class="l" href="https://github.com/VMArea/cloud-images">GitHub</a>
+  <a class="btn btn-out" href="https://vmarea.com">vmarea.com</a>
+</div></header>
+<main class="wrap">
+  <section class="hero">
+    <h1>Pick an image. <span class="m">Boot it anywhere KVM runs.</span></h1>
+    <p class="lead">Official distro images with cloud-init. Tested, signed and rebuilt every month.</p>
+  </section>
+  <div class="pick" id="os" role="group" aria-label="Operating system"></div>
+  <div class="pick versions" id="ver" role="group" aria-label="Version"></div>
+  <section class="panel" id="panel" aria-live="polite"></section>
+  <noscript><ul id="all"></ul></noscript>
+  <footer class="foot">
+    <span id="rel"></span>
+    <span>Ubuntu and Windows images are built for VMArea servers only and are not published.</span>
+    <span><a href="https://github.com/VMArea/cloud-images">Source and recipes on GitHub</a>, MIT licence.</span>
+  </footer>
+</main>
+<script type="application/json" id="data">/*DATA*/</script>
+<script>
+(function () {
+  var data = JSON.parse(document.getElementById("data").textContent);
+  var names = {"almalinux":"AlmaLinux","arch":"Arch Linux","centos-stream":"CentOS Stream","debian":"Debian","fedora":"Fedora","freebsd":"FreeBSD","opensuse-leap":"openSUSE Leap","rocky":"Rocky Linux"};
+  var byOs = {};
+  data.images.forEach(function (r) { (byOs[r.os] = byOs[r.os] || []).push(r); });
+  var vnum = function (v) { return v.split(".").map(function (x) { return parseInt(x, 10) || 0; }); };
+  var cmp = function (a, b) { var x = vnum(a.version), y = vnum(b.version); for (var i = 0; i < Math.max(x.length, y.length); i++) { var d = (y[i] || 0) - (x[i] || 0); if (d) return d; } return 0; };
+  var oses = Object.keys(byOs).sort(function (a, b) { return (names[a] || a).localeCompare(names[b] || b); });
+  oses.forEach(function (o) { byOs[o].sort(cmp); });
+  var el = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); };
+  var size = function (n) { return n < 1073741824 ? Math.round(n / 1048576) + " MB" : (n / 1073741824).toFixed(1) + " GB"; };
+  var day = function (s) { var d = new Date(s.slice(0, 10) + "T00:00:00Z"); return d.toLocaleDateString("en-GB", {day: "numeric", month: "long", year: "numeric", timeZone: "UTC"}); };
+  var label = function (o, r) { return (names[o] || o) + " " + r.version; };
+  var state = {os: null, ver: null};
+
+  function fixes(r) {
+    var v = r.vulnerabilities;
+    if (!v) return '<span class="m">Not scanned</span>';
+    var parts = [];
+    if (v.Critical) parts.push(v.Critical + " critical");
+    if (v.High) parts.push(v.High + " high");
+    return parts.length ? '<span class="warn">' + parts.join(", ") + "</span>" : '<span class="ok">None</span>';
+  }
+
+  function verify(r) {
+    var base = r.links.download.replace(/[^/]*$/, "");
+    return "curl -LO " + r.links.download + "\n" +
+      "curl -LO " + base + "SHA256SUMS\ncurl -LO " + base + "SHA256SUMS.sig\n" +
+      "curl -LO https://raw.githubusercontent.com/VMArea/cloud-images/main/publish/cosign.pub\n" +
+      "cosign verify-blob --key cosign.pub --bundle SHA256SUMS.sig --insecure-ignore-tlog SHA256SUMS\n" +
+      "sha256sum --ignore-missing -c SHA256SUMS";
+  }
+
+  function chips(box, items, active, onPick, cls) {
+    box.innerHTML = "";
+    items.forEach(function (it) {
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "chip" + (cls ? " " + cls : ""); b.textContent = it.text;
+      b.setAttribute("aria-pressed", it.key === active ? "true" : "false");
+      b.addEventListener("click", function () { onPick(it.key); });
+      box.appendChild(b);
+    });
+  }
+
+  function render(animate) {
+    var list = byOs[state.os];
+    var r = list.filter(function (x) { return x.version === state.ver; })[0] || list[0];
+    state.ver = r.version;
+    chips(el("os"), oses.map(function (o) { return {key: o, text: names[o] || o}; }), state.os, function (k) { state.os = k; state.ver = null; go(); });
+    chips(el("ver"), list.map(function (x) { return {key: x.version, text: x.version}; }), state.ver, function (k) { state.ver = k; go(); }, "v");
+    var L = r.links, files = [["Checksums", L.checksums], ["Signature", L.signature], ["SBOM", L.sbom], ["Scan report", L.vulnerabilities], ["Changes", L.changes]];
+    var p = el("panel");
+    p.innerHTML =
+      '<div class="head"><div><h2>' + esc(label(state.os, r)) + '</h2><p class="sub">qcow2, ' + size(r.size_bytes) + "</p></div>" +
+      '<a class="btn btn-pri btn-lg" href="' + esc(L.download) + '">Download</a></div>' +
+      "<details" + (state.open ? " open" : "") + "><summary>" + (state.open ? "Hide" : "Show") + " details</summary><div class=\"grid\"><div><dl>" +
+      "<dt>Built</dt><dd>" + day(r.build_date) + "</dd>" +
+      "<dt>Tests</dt><dd>" + (r.test === "pass" ? '<span class="ok">' + esc(r.test_summary || "Passed") + "</span>" : '<span class="warn">' + esc(r.test) + "</span>") + "</dd>" +
+      "<dt>Fixes since build</dt><dd>" + fixes(r) + "</dd></dl>" +
+      '<p class="note">Security updates the distribution released after this build. The first boot installs them.</p>' +
+      '<div class="files">' + files.filter(function (f) { return f[1]; }).map(function (f) { return '<a href="' + esc(f[1]) + '">' + f[0] + "</a>"; }).join("") + "</div></div>" +
+      '<div><div class="cmdhead"><span>Download and verify</span><button class="copy" type="button">Copy</button></div><pre>' + esc(verify(r)) + "</pre></div></div></details>";
+    var d = p.querySelector("details");
+    d.addEventListener("toggle", function () { state.open = d.open; d.querySelector("summary").textContent = (d.open ? "Hide" : "Show") + " details"; });
+    p.querySelector(".copy").addEventListener("click", function (ev) {
+      var btn = ev.currentTarget;
+      navigator.clipboard.writeText(verify(r)).then(function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1500); });
+    });
+    if (animate) { p.classList.remove("swap"); void p.offsetWidth; p.classList.add("swap"); }
+    var h = "#" + state.os + "-" + state.ver;
+    if (location.hash !== h) history.replaceState(null, "", h);
+    document.title = label(state.os, r) + " | VMArea cloud images";
+  }
+
+  function go() { render(true); }
+
+  function fromHash() {
+    var h = decodeURIComponent(location.hash.slice(1));
+    for (var i = 0; i < oses.length; i++) {
+      var o = oses[i];
+      if (h.indexOf(o + "-") === 0) { var v = h.slice(o.length + 1); if (byOs[o].some(function (x) { return x.version === v; })) return {os: o, ver: v}; }
+    }
+    return {os: byOs.debian ? "debian" : oses[0], ver: null};
+  }
+
+  state = fromHash();
+  render(false);
+  window.addEventListener("hashchange", function () { var o = state.open; state = fromHash(); state.open = o; render(true); });
+  el("rel").textContent = "Release " + data.release + ". " + data.images.length + " images." + (data.next_build ? " Next build " + day(data.next_build) + "." : "");
+})();
+</script>
+</body>
+</html>

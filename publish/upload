@@ -82,6 +82,7 @@ echo "uploaded $RELEASE_TAG"
 pages=$work/pages
 mkdir -p "$pages"
 cp "$stage/index.html" "$stage/index.json" "$pages/"
+[ -d "$stage/fonts" ] && cp -r "$stage/fonts" "$pages/"
 [ -z "${PAGES_CNAME:-}" ] || echo "$PAGES_CNAME" > "$pages/CNAME"
 touch "$pages/.nojekyll"
 (

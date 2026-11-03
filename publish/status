@@ -4,9 +4,8 @@ import html
 import json
 import os
 import re
+import shutil
 import sys
-
-SEV = ["Critical", "High", "Medium", "Low"]
 
 
 def load(p):
@@ -50,6 +49,7 @@ def collect(root):
                 "size_bytes": man.get("size_bytes"),
                 "sha256": man.get("sha256"),
                 "test": test.get("result", "not run"),
+                "test_summary": test_summary(test.get("note")),
                 "vulnerabilities": vul.get("fixable"),
                 "vulnerabilities_total": vul.get("total"),
                 "distro": vul.get("distro"),
@@ -65,117 +65,44 @@ def collect(root):
     return rows
 
 
-def size(n):
-    if not n:
-        return ""
-    return f"{n / 1048576:.0f} MiB" if n < 1 << 30 else f"{n / (1 << 30):.2f} GiB"
+SITE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "site")
 
 
-NAMES = {"almalinux": "AlmaLinux", "arch": "Arch Linux", "centos-stream": "CentOS Stream", "debian": "Debian",
-         "fedora": "Fedora", "freebsd": "FreeBSD", "opensuse-leap": "openSUSE Leap", "rocky": "Rocky Linux"}
-REPO = "https://github.com/" + os.environ.get("GH_REPO", "VMArea/cloud-images")
-LOGO = ('<svg viewBox="0 0 690 704" width="26" height="26" aria-hidden="true"><g fill="#0c6974">'
-        '<polygon points="192,286 326,351 326,698 192,698"/><polygon points="360,386 678,544 678,695 359,544"/>'
-        '<polygon points="360,12 492,12 492,417 359,353"/><polygon points="14,13 326,170 326,319 13,168"/>'
-        '<polygon points="527,254 677,329 678,444 527,445"/><polygon points="13,268 160,268 160,450 13,380"/></g></svg>')
+def next_build(today):
+    y, m = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
+    d = datetime.date(y, m, 1)
+    return (d + datetime.timedelta(days=(7 - d.weekday()) % 7)).isoformat()
 
-CSS = """
-:root{--bg:#eef8f4;--card:#fbfdfc;--fg:#0b1514;--mut:#51605f;--line:#d3e6dd;--acc:#006f49;--acc-soft:#e4f5ed;--warn:#8a5a00;--warn-soft:#fdf3dc;--bad:#a4261c;--bad-soft:#fbe6e3}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.55 "Be Vietnam Pro",system-ui,-apple-system,"Segoe UI",sans-serif;-webkit-font-smoothing:antialiased}
-a{color:var(--acc)}
-a:focus-visible{outline:2px solid var(--acc);outline-offset:2px;border-radius:4px}
-.top{max-width:68rem;margin:0 auto;padding:1.25rem 1.5rem;display:flex;align-items:center;justify-content:space-between}
-.brand{display:flex;align-items:center;gap:.6rem;font-weight:700;font-size:1.15rem;color:var(--fg);text-decoration:none}
-.top nav a{color:var(--mut);text-decoration:none;font-weight:500;margin-left:1.25rem}
-.top nav a:hover{color:var(--acc)}
-.hero{max-width:68rem;margin:0 auto;padding:2.5rem 1.5rem 1.5rem}
-.hero h1{font-size:2.6rem;line-height:1.05;letter-spacing:-.03em;margin:0}
-.hero h1 em{font-style:normal;color:var(--acc)}
-.hero p{color:var(--mut);margin:.75rem 0 0;font-size:1.05rem}
-.meta{font:500 .78rem ui-monospace,"Geist Mono",Menlo,Consolas,monospace;letter-spacing:.06em;text-transform:uppercase;color:var(--acc);margin-top:1.25rem}
-main{max-width:68rem;margin:0 auto;padding:0 1.5rem 2rem}
-.os{background:var(--card);border:1px solid var(--line);border-radius:14px;margin-top:1rem;overflow:hidden}
-.os h2{font-size:1.05rem;margin:0;padding:.85rem 1.25rem;border-bottom:1px solid var(--line)}
-.row{display:grid;grid-template-columns:5.5rem 1fr auto;gap:1rem;align-items:center;padding:.9rem 1.25rem;border-top:1px solid var(--line)}
-.os h2+.row{border-top:0}
-.ver{font-weight:700;font-size:1.05rem}
-.facts{display:flex;flex-wrap:wrap;gap:.4rem .9rem;align-items:center;color:var(--mut);font-size:.88rem}
-.pill{display:inline-block;border-radius:999px;padding:.1rem .6rem;font-size:.78rem;font-weight:600}
-.ok{background:var(--acc-soft);color:var(--acc)}
-.warn{background:var(--warn-soft);color:var(--warn)}
-.bad{background:var(--bad-soft);color:var(--bad)}
-.links{display:flex;flex-wrap:wrap;gap:.2rem .8rem;font-size:.82rem;margin-top:.35rem}
-.btn{display:inline-block;background:var(--acc);color:#fff;text-decoration:none;font-weight:600;padding:.5rem 1rem;border-radius:999px;white-space:nowrap}
-.btn:hover{background:#005a3b}
-footer{max-width:68rem;margin:0 auto;padding:1rem 1.5rem 3rem;color:var(--mut);font-size:.85rem}
-footer p{margin:.4rem 0}
-@media (max-width:640px){.row{grid-template-columns:1fr}.hero h1{font-size:2rem}}
-"""
+
+def test_summary(note):
+    m = re.match(r"(\d+) passed, (\d+) failed", note or "")
+    if not m:
+        return None
+    passed, failed = int(m.group(1)), int(m.group(2))
+    return f"{passed} of {passed + failed} passed"
 
 
 def render(rows, generated):
-    e = html.escape
-    tag = os.environ.get("RELEASE_TAG", "")
-    out = [
-        "<!doctype html>",
-        '<html lang="en"><head><meta charset="utf-8">',
-        '<meta name="viewport" content="width=device-width,initial-scale=1">',
-        "<title>Cloud images | VMArea</title>",
-        '<meta name="description" content="Tested, signed cloud images for KVM and QEMU with cloud-init. Rebuilt every month.">',
-        f"<style>{CSS}</style></head><body>",
-        f'<div class="top"><a class="brand" href="https://vmarea.com">{LOGO}VMArea</a>'
-        f'<nav><a href="{REPO}#quick-start">Quick start</a><a href="{REPO}">GitHub</a></nav></div>',
-        '<section class="hero"><h1>Cloud images, <em>tested and signed.</em></h1>',
-        "<p>For KVM and QEMU with cloud-init. Rebuilt every month.</p>",
-        f'<div class="meta">{"Release " + e(tag) + " / " if tag else ""}Updated {e(generated)}</div></section><main>',
-    ]
-    groups = {}
-    for r in rows:
-        groups.setdefault(r["os"], []).append(r)
-    for osn in sorted(groups, key=lambda k: NAMES.get(k, k).lower()):
-        out.append(f'<section class="os"><h2>{e(NAMES.get(osn, osn))}</h2>')
-        def vkey(r):
-            try:
-                return tuple(int(x) for x in r["version"].split("."))
-            except ValueError:
-                return (0,)
-        for r in sorted(groups[osn], key=vkey, reverse=True):
-            v = r["vulnerabilities"]
-            test = r["test"]
-            facts = [f"Built {e(r['build_date'][:10])}", e(size(r["size_bytes"]))]
-            facts.append('<span class="pill ok">Tested</span>' if test == "pass" else f'<span class="pill bad">Test {e(test)}</span>')
-            if v is None:
-                facts.append('<span class="pill warn">No scan</span>')
-            elif v["Critical"] or v["High"]:
-                facts.append(f'<span class="pill warn">{v["Critical"]} critical, {v["High"]} high fixed since build</span>')
-            else:
-                facts.append('<span class="pill ok">Up to date</span>')
-            L = r["links"]
-            links = [(L["checksums"], "Checksums"), (L["signature"], "Signature"), (L["sbom"], "SBOM"),
-                     (L["vulnerabilities"], "Scan report"), (L["changes"], "Changes")]
-            link_html = "".join(f'<a href="{e(u)}">{t}</a>' for u, t in links if u)
-            out.append(
-                f'<div class="row"><div class="ver">{e(r["version"])}</div>'
-                f'<div><div class="facts">{" ".join(facts)}</div><div class="links">{link_html}</div></div>'
-                f'<a class="btn" href="{e(L["download"])}">Download</a></div>'
-            )
-        out.append("</section>")
-    out += [
-        "</main><footer>",
-        "<p><strong>Fixed since build</strong> counts security fixes the distribution released after the image was built. "
-        "The first-boot update installs them, and the next monthly build includes them.</p>",
-        f'<p>Check every download against the signed <code>SHA256SUMS</code>, see the <a href="{REPO}#quick-start">quick start</a>. '
-        f'Source and recipes on <a href="{REPO}">GitHub</a>, MIT licence. Ubuntu and Windows images are not published.</p>',
-        "</footer></body></html>",
-    ]
-    return "\n".join(out) + "\n"
+    data = {
+        "release": os.environ.get("RELEASE_TAG", ""),
+        "generated": generated,
+        "next_build": next_build(datetime.datetime.now(datetime.timezone.utc).date()),
+        "images": rows,
+    }
+    items = "".join(
+        f'<li><a href="{html.escape(r["links"]["download"])}">{html.escape(r["file"])}</a></li>' for r in rows
+    )
+    blob = json.dumps(data, separators=(",", ":")).replace("</", "<\\/")
+    with open(os.path.join(SITE, "index.html")) as f:
+        page = f.read()
+    return page.replace("/*DATA*/", blob).replace('<ul id="all"></ul>', f'<ul id="all">{items}</ul>')
 
 
 def main():
     root = sys.argv[1]
     rows = collect(root)
     gen = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    shutil.copytree(os.path.join(SITE, "fonts"), os.path.join(root, "fonts"), dirs_exist_ok=True)
     with open(os.path.join(root, "index.html"), "w") as f:
         f.write(render(rows, gen))
     with open(os.path.join(root, "index.json"), "w") as f:
