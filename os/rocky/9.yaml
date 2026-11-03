@@ -4,6 +4,7 @@ arch: amd64
 package_manager: dnf
 first_boot_update: security
 selinux_relabel: true
+disable_kdump: true
 source:
   url: https://dl.rockylinux.org/pub/rocky/9/images/x86_64/Rocky-9-GenericCloud-Base.latest.x86_64.qcow2
 checksum:

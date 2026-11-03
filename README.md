@@ -17,7 +17,7 @@ Build recipes for cloud images that run on KVM/QEMU with cloud-init. Each recipe
 
 ## Recipes
 
-`os/<distro>/<version>.yaml`. Fields: `name`, `version`, `arch`, `package_manager` (`apt`, `dnf`, `zypper`, `pacman`, `pkg`), `first_boot_update`, `source.url`, `checksum` (`url`, `algo`), optional `signature`, optional `eol` (`product`, `cycle`; omitted for rolling releases), optional `selinux_relabel`, `grow` (`partition`, `size`: enlarge a too-small vendor image before customising), `kernel_args`.
+`os/<distro>/<version>.yaml`. Fields: `name`, `version`, `arch`, `package_manager` (`apt`, `dnf`, `zypper`, `pacman`, `pkg`), `first_boot_update`, `source.url`, `checksum` (`url`, `algo`), optional `signature`, optional `eol` (`product`, `cycle`; omitted for rolling releases), optional `selinux_relabel`, `disable_kdump` (turn off kdump and drop the `crashkernel` memory reservation), `grow` (`partition`, `size`: enlarge a too-small vendor image before customising), `kernel_args`.
 
 `signature` is either `keyring` (a system keyring file) or `key` (an armored key in `keys/`) plus `fingerprint` (checked against the key file). `kind` is `detached` (default) or `clearsign` (the checksum file itself), and `target: image` verifies the signature over the image instead of the checksum file.
 

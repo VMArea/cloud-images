@@ -250,6 +250,8 @@ def customize_args(spec):
         run("echo LANG=en_US.UTF-8 > /etc/locale.conf")
     run("systemctl enable qemu-guest-agent || true")
     run("for u in firewalld ufw; do systemctl disable $u 2>/dev/null; done; [ -f /etc/ufw/ufw.conf ] && sed -i 's/^ENABLED=.*/ENABLED=no/' /etc/ufw/ufw.conf; true")
+    if spec.get("disable_kdump"):
+        run("systemctl disable kdump 2>/dev/null; command -v grubby >/dev/null && grubby --update-kernel=ALL --remove-args=crashkernel; sed -i -E 's/ ?crashkernel=[^ \"]*//g' /etc/kernel/cmdline /etc/default/grub 2>/dev/null; true")
     a.extend(["--mkdir", "/etc/vmarea"])
     a.extend(["--write", f"/etc/vmarea/image.conf:{HEADER}\nFIRST_BOOT_UPDATE={mode}\n"])
     a.extend(["--upload", f"{ROOT}/files/README.txt:/etc/vmarea/README.txt"])
