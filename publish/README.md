@@ -6,6 +6,7 @@ Tooling for the monthly release. Nothing here uploads unless `--yes` is given.
 publish/install-tools
 publish/record-test output/debian-13-<date>.qcow2 pass
 publish/release output --stage stage --prev-dir <older-manifests> [--upload [--yes]]
+publish/monthly
 ```
 
 `release` runs, per redistributable image: package diff (`changes`), SBOM and vulnerability scan (`sbom`), a stage tree `stage/<os>/<version>/<date>/`, `sign`, then `status` for `stage/index.html` and `index.json`. With `--upload` it runs `upload` as a dry run; `--yes` makes it real.
@@ -17,6 +18,7 @@ publish/release output --stage stage --prev-dir <older-manifests> [--upload [--y
 - Redistribution: only OS names in `allowed-os.txt` are processed. Ubuntu and Windows are never staged or uploaded. `release` refuses an image without a passing `<image>.test.json`.
 - `upload` publishes to GitHub: one release per run, tagged with the UTC date (`RELEASE_TAG`, for example `2026.11.03`), holding the newest build of each OS version as flat files plus one `SHA256SUMS` and `SHA256SUMS.sig` for the whole release. Release files must stay under 2 GiB each. It then pushes `index.html` and `index.json` to the `gh-pages` branch (with `CNAME` from `PAGES_CNAME` when set) and keeps the newest `KEEP` releases (default 3). Needs `GH_TOKEN` (a fine-grained token for this repository with Contents read and write). Dry run is the default.
 - `status` builds the static page from the stage tree.
+- `monthly` builds every recipe in `os/`, tests each image, and releases the ones that pass (upload only with `PUBLISH=1`). Logs go to `~/monthly/<date>/`. On any failure it runs `NOTIFY_CMD "<subject>"` with the details on stdin; a success is silent. Failed images are never published, so the previous release stays current.
 
 ## Test results file
 

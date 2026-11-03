@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+set -uo pipefail
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+cd "$ROOT"
+. publish/lib.sh
+DAY=$(date -u +%Y%m%d)
+RUN=${RUN_DIR:-$HOME/monthly/$DAY}
+LOG=$RUN/run.log
+mkdir -p "$RUN/images" "$RUN/logs"
+exec >>"$LOG" 2>&1
+
+notify() {
+  [ -n "${NOTIFY_CMD:-}" ] || return 0
+  printf '%s\n' "$2" | $NOTIFY_CMD "$1" || echo "notify failed"
+}
+
+echo "== monthly run $DAY started $(date -u +%FT%TZ)"
+failed=()
+for recipe in os/*/*.yaml; do
+  key=$(basename "$(dirname "$recipe")")-$(basename "$recipe" .yaml)
+  echo "-- build $recipe"
+  if ! ./build "$recipe" > "$RUN/logs/$key.build.log" 2>&1; then
+    failed+=("$key: build (see logs/$key.build.log)")
+    continue
+  fi
+  img=$(ls -t output/*-"$DAY".qcow2 2>/dev/null | head -1)
+  [ -n "$img" ] || { failed+=("$key: no output"); continue; }
+  stem=$(basename "$img" .qcow2)
+  if ./test "$img" > "$RUN/logs/$stem.test.log" 2>&1; then
+    publish/record-test "$img" pass "$(tail -1 "$RUN/logs/$stem.test.log")"
+    for f in "$img" "$img.sha256" "output/$stem.json" "output/$stem.test.json"; do ln -f "$f" "$RUN/images/"; done
+    echo "PASS $stem"
+  else
+    publish/record-test "$img" fail
+    failed+=("$stem: test (see logs/$stem.test.log)")
+  fi
+done
+
+released=no
+if ls "$RUN/images/"*.qcow2 >/dev/null 2>&1; then
+  if publish/release "$RUN/images" --stage "$RUN/stage" --prev-dir output ${PUBLISH:+--yes}; then
+    released=yes
+  else
+    failed+=("release (see run.log)")
+  fi
+fi
+echo "== finished $(date -u +%FT%TZ): released=$released failed=${#failed[@]}"
+
+if [ ${#failed[@]} -gt 0 ]; then
+  notify "[cloud-images] monthly run $DAY: ${#failed[@]} problem(s)" "$(printf '%s\n' "${failed[@]}"; echo; echo "Run directory: $RUN on $(hostname)"; echo "Previous images stay in use; nothing failed was published.")"
+  exit 1
+fi
