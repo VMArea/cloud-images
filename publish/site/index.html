@@ -65,22 +65,22 @@ summary::-webkit-details-marker{display:none}
 summary::before{content:"";width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .2s}
 details[open] summary::before{transform:rotate(45deg)}
 summary:hover{color:var(--fg)}
-.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.35fr);gap:clamp(24px,4vw,44px);margin-top:20px}
-dl{display:grid;grid-template-columns:auto 1fr;gap:10px 22px;margin:0}
+dl{margin:14px 0 0}
+dl div{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;padding:12px 0;border-bottom:1px solid var(--line);align-items:baseline}
+dl div:last-child{border-bottom:0}
 dt{color:var(--mut);font-size:14px}
-dd{margin:0}
+dd{margin:0;font-size:15px;min-width:0}
 .mono{font:13px var(--mono)}
 .ok{color:var(--pri)}.warn{color:var(--warn)}
-.note{color:var(--mut);font-size:13px;margin:6px 0 0;max-width:42ch}
-.files{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:20px;font-size:14px}
-.cmdhead{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;color:var(--mut);font-size:14px}
-.copy{appearance:none;background:none;border:1px solid var(--line-strong);color:var(--fg);font:500 12px var(--sans);padding:4px 10px;border-radius:6px;cursor:pointer}
-.copy:hover{border-color:var(--pri)}
-pre{margin:0;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:14px 16px;font:12.5px/1.75 var(--mono);white-space:pre-wrap;word-break:break-all;color:var(--fg)}
-.foot{margin-top:72px;border-top:1px solid var(--line);padding:22px 0 48px;color:var(--mut);font-size:13px;display:flex;flex-wrap:wrap;gap:8px 24px}
-.foot span{max-width:70ch}
+.hint{color:var(--mut);font-size:13px;display:block;margin-top:2px}
+.hash{display:flex;align-items:center;gap:12px}
+.hash code{font:13px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.files{display:flex;flex-wrap:wrap;gap:4px 18px}
+.copy{appearance:none;background:none;border:0;color:var(--pri);font:500 13px var(--sans);padding:0;cursor:pointer;flex:none}
+.copy:hover{text-decoration:underline}
+.foot{margin-top:72px;border-top:1px solid var(--line);padding:22px 0 48px;color:var(--mut);font-size:13px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 24px}
 noscript ul{line-height:2}
-@media (max-width:720px){.grid{grid-template-columns:1fr}.nav .crumb{display:none}.nav .wrap{gap:16px}}
+@media (max-width:720px){dl div{grid-template-columns:1fr;gap:4px}.nav .crumb{display:none}.nav .wrap{gap:16px}}
 @media (prefers-reduced-motion:reduce){.panel.swap{animation:none}.chip,summary::before{transition:none}}
 </style>
 </head>
@@ -103,8 +103,7 @@ noscript ul{line-height:2}
   <noscript><ul id="all"></ul></noscript>
   <footer class="foot">
     <span id="rel"></span>
-    <span>Ubuntu and Windows images are built for VMArea servers only and are not published.</span>
-    <span><a href="https://github.com/VMArea/cloud-images">Source and recipes on GitHub</a>, MIT licence.</span>
+    <span><a href="https://github.com/VMArea/cloud-images">Source on GitHub</a> &middot; MIT licence</span>
   </footer>
 </main>
 <script type="application/json" id="data">/*DATA*/</script>
@@ -134,15 +133,6 @@ noscript ul{line-height:2}
     return parts.length ? '<span class="warn">' + parts.join(", ") + "</span>" : '<span class="ok">None</span>';
   }
 
-  function verify(r) {
-    var base = r.links.download.replace(/[^/]*$/, "");
-    return "curl -LO " + r.links.download + "\n" +
-      "curl -LO " + base + "SHA256SUMS\ncurl -LO " + base + "SHA256SUMS.sig\n" +
-      "curl -LO https://raw.githubusercontent.com/VMArea/cloud-images/main/publish/cosign.pub\n" +
-      "cosign verify-blob --key cosign.pub --bundle SHA256SUMS.sig --insecure-ignore-tlog SHA256SUMS\n" +
-      "sha256sum --ignore-missing -c SHA256SUMS";
-  }
-
   function chips(box, items, active, onPick, cls) {
     box.innerHTML = "";
     items.forEach(function (it) {
@@ -160,23 +150,25 @@ noscript ul{line-height:2}
     state.ver = r.version;
     chips(el("os"), oses.map(function (o) { return {key: o, text: names[o] || o}; }), state.os, function (k) { state.os = k; state.ver = null; go(); });
     chips(el("ver"), list.map(function (x) { return {key: x.version, text: x.version}; }), state.ver, function (k) { state.ver = k; go(); }, "v");
-    var L = r.links, files = [["Checksums", L.checksums], ["Signature", L.signature], ["SBOM", L.sbom], ["Scan report", L.vulnerabilities], ["Changes", L.changes]];
+    var L = r.links, files = [["SHA256SUMS", L.checksums], ["Signature", L.signature], ["SBOM", L.sbom], ["Scan report", L.vulnerabilities], ["Changes", L.changes]];
+    var row = function (k, v) { return "<div><dt>" + k + "</dt><dd>" + v + "</dd></div>"; };
     var p = el("panel");
     p.innerHTML =
       '<div class="head"><div><h2>' + esc(label(state.os, r)) + '</h2><p class="sub">qcow2, ' + size(r.size_bytes) + "</p></div>" +
       '<a class="btn btn-pri btn-lg" href="' + esc(L.download) + '">Download</a></div>' +
-      "<details" + (state.open ? " open" : "") + "><summary>" + (state.open ? "Hide" : "Show") + " details</summary><div class=\"grid\"><div><dl>" +
-      "<dt>Built</dt><dd>" + day(r.build_date) + "</dd>" +
-      "<dt>Tests</dt><dd>" + (r.test === "pass" ? '<span class="ok">' + esc(r.test_summary || "Passed") + "</span>" : '<span class="warn">' + esc(r.test) + "</span>") + "</dd>" +
-      "<dt>Fixes since build</dt><dd>" + fixes(r) + "</dd></dl>" +
-      '<p class="note">Security updates the distribution released after this build. The first boot installs them.</p>' +
-      '<div class="files">' + files.filter(function (f) { return f[1]; }).map(function (f) { return '<a href="' + esc(f[1]) + '">' + f[0] + "</a>"; }).join("") + "</div></div>" +
-      '<div><div class="cmdhead"><span>Download and verify</span><button class="copy" type="button">Copy</button></div><pre>' + esc(verify(r)) + "</pre></div></div></details>";
+      "<details" + (state.open ? " open" : "") + "><summary>" + (state.open ? "Hide" : "Show") + " details</summary><dl>" +
+      row("Built", day(r.build_date)) +
+      row("Tests", r.test === "pass" ? '<span class="ok">' + esc(r.test_summary || "Passed") + "</span>" : '<span class="warn">' + esc(r.test) + "</span>") +
+      row("Security fixes", fixes(r) + '<span class="hint">Released after this build, installed on first boot.</span>') +
+      (r.sha256 ? row("SHA-256", '<span class="hash"><code title="' + esc(r.sha256) + '">' + esc(r.sha256) + '</code><button class="copy" type="button">Copy</button></span>') : "") +
+      row("Files", '<span class="files">' + files.filter(function (f) { return f[1]; }).map(function (f) { return '<a href="' + esc(f[1]) + '">' + f[0] + "</a>"; }).join("") + "</span>") +
+      "</dl></details>";
     var d = p.querySelector("details");
     d.addEventListener("toggle", function () { state.open = d.open; d.querySelector("summary").textContent = (d.open ? "Hide" : "Show") + " details"; });
-    p.querySelector(".copy").addEventListener("click", function (ev) {
+    var cp = p.querySelector(".copy");
+    if (cp) cp.addEventListener("click", function (ev) {
       var btn = ev.currentTarget;
-      navigator.clipboard.writeText(verify(r)).then(function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1500); });
+      navigator.clipboard.writeText(r.sha256).then(function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1500); });
     });
     if (animate) { p.classList.remove("swap"); void p.offsetWidth; p.classList.add("swap"); }
     var h = "#" + state.os + "-" + state.ver;
@@ -198,7 +190,7 @@ noscript ul{line-height:2}
   state = fromHash();
   render(false);
   window.addEventListener("hashchange", function () { var o = state.open; state = fromHash(); state.open = o; render(true); });
-  el("rel").textContent = "Release " + data.release + ". " + data.images.length + " images." + (data.next_build ? " Next build " + day(data.next_build) + "." : "");
+  el("rel").textContent = "Release " + data.release;
 })();
 </script>
 </body>

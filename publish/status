@@ -68,12 +68,6 @@ def collect(root):
 SITE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "site")
 
 
-def next_build(today):
-    y, m = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
-    d = datetime.date(y, m, 1)
-    return (d + datetime.timedelta(days=(7 - d.weekday()) % 7)).isoformat()
-
-
 def test_summary(note):
     m = re.match(r"(\d+) passed, (\d+) failed", note or "")
     if not m:
@@ -86,7 +80,6 @@ def render(rows, generated):
     data = {
         "release": os.environ.get("RELEASE_TAG", ""),
         "generated": generated,
-        "next_build": next_build(datetime.datetime.now(datetime.timezone.utc).date()),
         "images": rows,
     }
     items = "".join(
