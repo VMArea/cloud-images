@@ -35,6 +35,7 @@ while read -r m; do
   d=$stage/$osn/$ver/$date
   mkdir -p "$d"
   for f in "$stem.qcow2" "$stem.json" "$stem.test.json" "$stem.spdx.json" "$stem.vulns.json" "$stem.vulns-summary.json" "$stem.changes.txt"; do
+    [ -e "$out/$f" ] || continue
     [ -e "$d/$f" ] || ln -L "$out/$f" "$d/$f" 2>/dev/null || cp -L "$out/$f" "$d/$f"
   done
   "$HERE/sign" "$d"
