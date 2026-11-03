@@ -1,6 +1,6 @@
 # Windows images
 
-Build scripts for Windows Server 2019, 2022, 2025 and Windows 11. The images are built from Microsoft Evaluation media and are never published. Only the scripts live here; licensing of the resulting images is the customer's responsibility.
+Build scripts for Windows Server 2019, 2022 and 2025. The images are built from Microsoft Evaluation media and are never published. Only the scripts live here; licensing of the resulting images is the customer's responsibility.
 
 ## What the build does
 
