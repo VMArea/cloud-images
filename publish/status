@@ -36,7 +36,7 @@ def collect(root):
             man = load(os.path.join(d, stem + ".json")) or {}
             test = load(os.path.join(d, stem + ".test.json")) or {}
             vul = load(os.path.join(d, stem + ".vulns-summary.json")) or {}
-            rel = f"{osn}/{ver}/{date}/"
+            rel = os.environ.get("DOWNLOAD_BASE") or f"{osn}/{ver}/{date}/"
 
             def link(suffix):
                 return rel + stem + suffix if os.path.exists(os.path.join(d, stem + suffix)) else None

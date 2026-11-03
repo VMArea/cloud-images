@@ -10,12 +10,12 @@ publish/release output --stage stage --prev-dir <older-manifests> [--upload [--y
 
 `release` runs, per redistributable image: package diff (`changes`), SBOM and vulnerability scan (`sbom`), a stage tree `stage/<os>/<version>/<date>/`, `sign`, then `status` for `stage/index.html` and `index.json`. With `--upload` it runs `upload` as a dry run; `--yes` makes it real.
 
-- `install-tools` installs syft, grype, cosign and rclone from pinned official releases into `~/.local/bin`, verifying each against the published checksums.
+- `install-tools` installs syft, grype, cosign and the GitHub CLI (gh) from pinned official releases into `~/.local/bin`, verifying each against the published checksums.
 - `sbom` mounts each image read-only with guestmount, writes `<image>.spdx.json` (syft), `<image>.vulns.json` (grype on the SBOM) and `<image>.vulns-summary.json` (counts by severity as `fixable`, grype `--only-fixed`, and `total`, plus the detected distro). Set `FORCE=1` to redo up-to-date images.
 - `changes` writes `<image>.changes.txt` by comparing package lists in the manifests with the newest earlier build of the same OS and version, in the output dir or `--prev-dir`.
 - `sign` writes `SHA256SUMS` for a release directory and signs it with cosign (`SHA256SUMS.sig` is a bundle). The key pair lives in `~/.cosign/` on the builder (`cosign.key`, `cosign.pub`, `password` mode 0600) and is generated on first use. Only `publish/cosign.pub` is committed.
 - Redistribution: only OS names in `allowed-os.txt` are processed. Ubuntu and Windows are never staged or uploaded. `release` refuses an image without a passing `<image>.test.json`.
-- `upload` needs `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and `R2_BUCKET`. Layout: `<os>/<version>/<date>/<files>`, `<os>/<version>/latest.json`, and `index.html` and `index.json` at the root. Retention keeps only the newest dated build per OS and version. Dry run is the default.
+- `upload` publishes to GitHub: one release per run, tagged with the UTC date (`RELEASE_TAG`, for example `2026.11.03`), holding the newest build of each OS version as flat files plus one `SHA256SUMS` and `SHA256SUMS.sig` for the whole release. Release files must stay under 2 GiB each. It then pushes `index.html` and `index.json` to the `gh-pages` branch (with `CNAME` from `PAGES_CNAME` when set) and keeps the newest `KEEP` releases (default 3). Needs `GH_TOKEN` (a fine-grained token for this repository with Contents read and write). Dry run is the default.
 - `status` builds the static page from the stage tree.
 
 ## Test results file

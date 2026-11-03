@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 . "$(dirname "$0")/lib.sh"
-need rclone python3
-KEEP=1
+need gh git python3
+KEEP=${KEEP:-3}
+MAX_ASSET=$((2 * 1024 * 1024 * 1024 - 1))
 DRY=1
 stage=
 for a in "$@"; do
@@ -14,65 +15,84 @@ for a in "$@"; do
   esac
 done
 [ -d "${stage:-}" ] || die "usage: upload <stage-dir> [--dry-run|--yes]"
-
-have_creds=1
-for v in R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET; do
-  [ -n "${!v:-}" ] || have_creds=0
-done
-if [ "$DRY" = 0 ] && [ "$have_creds" = 0 ]; then
-  die "R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY and R2_BUCKET are required for --yes"
-fi
-if [ "$have_creds" = 1 ]; then
-  export RCLONE_CONFIG_R2_TYPE=s3 RCLONE_CONFIG_R2_PROVIDER=Cloudflare
-  export RCLONE_CONFIG_R2_ACCESS_KEY_ID=$R2_ACCESS_KEY_ID RCLONE_CONFIG_R2_SECRET_ACCESS_KEY=$R2_SECRET_ACCESS_KEY
-  export RCLONE_CONFIG_R2_ENDPOINT="https://$R2_ACCOUNT_ID.r2.cloudflarestorage.com"
-  export RCLONE_CONFIG_R2_NO_CHECK_BUCKET=true
-fi
-dest=r2:${R2_BUCKET:-BUCKET}
-flag=()
-if [ "$DRY" = 1 ]; then
-  flag=(--dry-run)
+[ -n "${RELEASE_TAG:-}" ] || die "RELEASE_TAG is not set (publish/release sets it)"
+repo=$GH_REPO
+if [ "$DRY" = 0 ]; then
+  [ -n "${GH_TOKEN:-}" ] || die "GH_TOKEN is required for --yes"
+else
   echo "dry run: nothing is uploaded (pass --yes to upload)"
 fi
 
-run() {
-  if [ "$have_creds" = 1 ]; then
-    rclone "$@" "${flag[@]}"
-  else
-    echo "would run: rclone $*"
-  fi
-}
-
-work=$(mktemp -d)
+work=$(mktemp -d "$(dirname "$(realpath "$stage")")/.upload.XXXXXX")
 trap 'rm -rf "$work"' EXIT
+assets=$work/assets
+mkdir -p "$assets"
 
 for vdir in "$stage"/*/*/; do
   [ -d "$vdir" ] || continue
-  ver=$(basename "$vdir")
-  osn=$(basename "$(dirname "$vdir")")
-  mapfile -t dates < <(find "$vdir" -mindepth 1 -maxdepth 1 -type d -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' -printf '%f\n' | sort)
-  [ "${#dates[@]}" -gt 0 ] || continue
-  for d in "${dates[@]}"; do
-    [ -f "$vdir$d/SHA256SUMS.sig" ] || die "$osn/$ver/$d is not signed"
-    run copy "$vdir$d" "$dest/$osn/$ver/$d" --checksum
-  done
-  latest=${dates[-1]}
-  python3 - "$work/latest.json" "$osn" "$ver" "$latest" "$vdir$latest" <<'PY'
-import json, os, sys
-dest, osn, ver, date, d = sys.argv[1:6]
-json.dump({"os": osn, "version": ver, "date": date, "path": f"{osn}/{ver}/{date}/", "files": sorted(os.listdir(d))}, open(dest, "w"), indent=2)
-PY
-  run copyto "$work/latest.json" "$dest/$osn/$ver/latest.json"
-  if [ "$have_creds" = 1 ]; then
-    mapfile -t remote < <(rclone lsf --dirs-only "$dest/$osn/$ver/" | tr -d / | grep -E '^[0-9]{8}$' | sort || true)
-    drop=$(( ${#remote[@]} - KEEP ))
-    for ((i = 0; i < drop; i++)); do
-      echo "retention: removing ${remote[i]} from $osn/$ver"
-      rclone purge "$dest/$osn/$ver/${remote[i]}" "${flag[@]}"
-    done
-  else
-    echo "would prune $osn/$ver to the newest $KEEP dated builds"
-  fi
+  latest=$(find "$vdir" -mindepth 1 -maxdepth 1 -type d -name '[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' -printf '%f\n' | sort | tail -1)
+  [ -n "$latest" ] || continue
+  d=$vdir$latest
+  [ -f "$d/SHA256SUMS.sig" ] || die "$d is not signed"
+  (cd "$d" && sha256sum --quiet -c SHA256SUMS) || die "$d does not match its SHA256SUMS"
+  find "$d" -maxdepth 1 -type f ! -name 'SHA256SUMS*' -exec ln -f {} "$assets/" \;
 done
-run copyto "$stage/index.html" "$dest/index.html"
-run copyto "$stage/index.json" "$dest/index.json"
+n=$(find "$assets" -type f | wc -l)
+[ "$n" -gt 0 ] || die "nothing to upload in $stage"
+while read -r s f; do
+  [ "$s" -le "$MAX_ASSET" ] || die "$f is larger than the 2 GiB release asset limit"
+done < <(find "$assets" -type f -printf '%s %f\n')
+"$HERE/sign" "$assets"
+
+total=$(du -cb "$assets"/* | tail -1 | cut -f1)
+echo "release $RELEASE_TAG on $repo: $(find "$assets" -type f | wc -l) files, $((total / 1024 / 1024)) MiB"
+python3 - "$stage/index.json" > "$work/notes.md" <<'PY'
+import json, sys
+rows = json.load(open(sys.argv[1]))
+rows = rows.get("images", rows) if isinstance(rows, dict) else rows
+print("Cloud images for KVM/QEMU with cloud-init. Verify downloads with `SHA256SUMS` and `SHA256SUMS.sig` (see the README).\n")
+print("| OS | Version | Build | Image |")
+print("|---|---|---|---|")
+for r in rows:
+    print(f"| {r['os']} | {r['version']} | {r['build_date']} | `{r['file']}` |")
+PY
+
+if [ "$DRY" = 1 ]; then
+  find "$assets" -type f -printf '  %f  %s\n' | sort
+  echo "would create release $RELEASE_TAG, upload the files above, publish index.html and index.json to gh-pages and keep the newest $KEEP releases"
+  exit 0
+fi
+
+if gh release view "$RELEASE_TAG" --repo "$repo" >/dev/null 2>&1; then
+  gh release edit "$RELEASE_TAG" --repo "$repo" --notes-file "$work/notes.md" >/dev/null
+else
+  gh release create "$RELEASE_TAG" --repo "$repo" --title "Cloud images $RELEASE_TAG" --notes-file "$work/notes.md" --latest >/dev/null
+fi
+for f in "$assets"/*; do
+  for try in 1 2 3; do
+    gh release upload "$RELEASE_TAG" "$f" --repo "$repo" --clobber && break
+    [ "$try" = 3 ] && die "upload failed: $(basename "$f")"
+    sleep 10
+  done
+done
+echo "uploaded $RELEASE_TAG"
+
+pages=$work/pages
+mkdir -p "$pages"
+cp "$stage/index.html" "$stage/index.json" "$pages/"
+[ -z "${PAGES_CNAME:-}" ] || echo "$PAGES_CNAME" > "$pages/CNAME"
+touch "$pages/.nojekyll"
+(
+  cd "$pages"
+  git init -q -b gh-pages
+  git -c user.name="VMArea" -c user.email="hello@vmarea.com" add -A
+  git -c user.name="VMArea" -c user.email="hello@vmarea.com" commit -q -m "Status page for $RELEASE_TAG"
+  git -c credential.helper='!gh auth git-credential' push -q --force "https://github.com/$repo.git" gh-pages
+)
+echo "published status page to gh-pages"
+
+mapfile -t old < <(gh release list --repo "$repo" --limit 100 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName' | tail -n +$((KEEP + 1)))
+for t in "${old[@]}"; do
+  echo "retention: deleting release $t"
+  gh release delete "$t" --repo "$repo" --cleanup-tag --yes
+done

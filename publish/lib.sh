@@ -1,5 +1,6 @@
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 export PATH="${PUBLISH_BIN:-$HOME/.local/bin}:$PATH"
+export GH_REPO="${GH_REPO:-VMArea/cloud-images}"
 
 die() { echo "error: $*" >&2; exit 1; }
 

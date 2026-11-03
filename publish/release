@@ -40,5 +40,7 @@ while read -r m; do
   "$HERE/sign" "$d"
 done < <(selected_manifests "$out")
 
+export RELEASE_TAG="${RELEASE_TAG:-$(date -u +%Y.%m.%d)}"
+export DOWNLOAD_BASE="https://github.com/$GH_REPO/releases/download/$RELEASE_TAG/"
 python3 "$HERE/status" "$stage"
 if [ ${#up[@]} -gt 0 ]; then "$HERE/upload" "$stage" "${up[@]}"; fi

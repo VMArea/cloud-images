@@ -3,7 +3,7 @@ set -euo pipefail
 SYFT=1.55.0
 GRYPE=0.121.0
 COSIGN=3.1.4
-RCLONE=1.75.2
+GH=2.103.3
 BIN="${PUBLISH_BIN:-$HOME/.local/bin}"
 mkdir -p "$BIN"
 tmp=$(mktemp -d)
@@ -36,14 +36,14 @@ fetch "https://github.com/sigstore/cosign/releases/download/v$COSIGN/cosign_chec
 verify cosign-linux-amd64 cosign.sums
 install -m 0755 cosign-linux-amd64 "$BIN/cosign"
 
-f=rclone-v$RCLONE-linux-amd64.zip
-fetch "https://downloads.rclone.org/v$RCLONE/$f" "$f"
-fetch "https://downloads.rclone.org/v$RCLONE/SHA256SUMS" rclone.sums
-verify "$f" rclone.sums
-python3 -c "import zipfile,sys; zipfile.ZipFile(sys.argv[1]).extract(sys.argv[2],'.')" "$f" "rclone-v$RCLONE-linux-amd64/rclone"
-install -m 0755 "rclone-v$RCLONE-linux-amd64/rclone" "$BIN/rclone"
+f=gh_${GH}_linux_amd64.tar.gz
+fetch "https://github.com/cli/cli/releases/download/v$GH/$f" "$f"
+fetch "https://github.com/cli/cli/releases/download/v$GH/gh_${GH}_checksums.txt" gh.sums
+verify "$f" gh.sums
+tar -xzf "$f" "gh_${GH}_linux_amd64/bin/gh"
+install -m 0755 "gh_${GH}_linux_amd64/bin/gh" "$BIN/gh"
 
 "$BIN/syft" version | head -1
 "$BIN/grype" version | head -1
 "$BIN/cosign" version 2>&1 | grep -i gitversion
-"$BIN/rclone" version | head -1
+"$BIN/gh" --version | head -1
