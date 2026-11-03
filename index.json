@@ -1,0 +1,553 @@
+{
+  "generated": "2026-11-03 11:50 UTC",
+  "images": [
+    {
+      "os": "almalinux",
+      "version": "10",
+      "build_date": "2026-11-01T15:47:02Z",
+      "date": "20261101",
+      "file": "almalinux-10-20261101.qcow2",
+      "size_bytes": 563806208,
+      "sha256": "aa6e4bf6e0a70e778ffe7175a39b6fdb66695aa1b4afc74d8f8601dd0b67e878",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 6,
+        "High": 110,
+        "Medium": 42,
+        "Low": 1,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "vulnerabilities_total": {
+        "Critical": 6,
+        "High": 996,
+        "Medium": 24377,
+        "Low": 9691,
+        "Negligible": 18,
+        "Unknown": 108
+      },
+      "distro": "almalinux 10.2",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-10-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-10-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-10-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-10-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "almalinux",
+      "version": "8",
+      "build_date": "2026-11-01T15:45:21Z",
+      "date": "20261101",
+      "file": "almalinux-8-20261101.qcow2",
+      "size_bytes": 1714094080,
+      "sha256": "8b055ec6b39579a353e93c19229c36c46207d34315398fbb8dff1d5552f9199e",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 9,
+        "High": 38,
+        "Medium": 27,
+        "Low": 7,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "vulnerabilities_total": {
+        "Critical": 9,
+        "High": 606,
+        "Medium": 20947,
+        "Low": 10046,
+        "Negligible": 49,
+        "Unknown": 150
+      },
+      "distro": "almalinux 8.10",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-8-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-8-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-8-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-8-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "almalinux",
+      "version": "9",
+      "build_date": "2026-11-01T14:53:27Z",
+      "date": "20261101",
+      "file": "almalinux-9-20261101.qcow2",
+      "size_bytes": 539426816,
+      "sha256": "5374d5ada8b3e00c77ae8b8c9bebb94063b24dde0d2da593650f1a70de443a95",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 6,
+        "High": 68,
+        "Medium": 48,
+        "Low": 2,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "vulnerabilities_total": {
+        "Critical": 6,
+        "High": 887,
+        "Medium": 27234,
+        "Low": 13117,
+        "Negligible": 46,
+        "Unknown": 126
+      },
+      "distro": "almalinux 9.8",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-9-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-9-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-9-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-9-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "arch",
+      "version": "rolling",
+      "build_date": "2026-11-01T15:56:08Z",
+      "date": "20261101",
+      "file": "arch-rolling-20261101.qcow2",
+      "size_bytes": 597931520,
+      "sha256": "da77590fc34824e71483b0714bfb655b3803bc9b843a06d58696a35648fdb93a",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 0,
+        "High": 0,
+        "Medium": 0,
+        "Low": 0,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "vulnerabilities_total": {
+        "Critical": 0,
+        "High": 3,
+        "Medium": 6,
+        "Low": 2,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "distro": "archlinux rolling",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/arch-rolling-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/arch-rolling-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/arch-rolling-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/arch-rolling-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "centos-stream",
+      "version": "10",
+      "build_date": "2026-11-01T15:52:33Z",
+      "date": "20261101",
+      "file": "centos-stream-10-20261101.qcow2",
+      "size_bytes": 1058996224,
+      "sha256": "0be344fea8b70a749c89859a646b0fc5b19426c418469dead5bc0433d30de23d",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 8,
+        "High": 80,
+        "Medium": 78,
+        "Low": 9,
+        "Negligible": 0,
+        "Unknown": 3
+      },
+      "vulnerabilities_total": {
+        "Critical": 8,
+        "High": 1143,
+        "Medium": 28624,
+        "Low": 11333,
+        "Negligible": 21,
+        "Unknown": 129
+      },
+      "distro": "centos 10",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-10-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-10-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-10-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-10-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "centos-stream",
+      "version": "9",
+      "build_date": "2026-11-01T15:18:54Z",
+      "date": "20261101",
+      "file": "centos-stream-9-20261101.qcow2",
+      "size_bytes": 1330839552,
+      "sha256": "bcfe9f56621c3fdc570b783e6a611aea182ff885d6c3d0d231010d61a1376c83",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 0,
+        "High": 41,
+        "Medium": 80,
+        "Low": 11,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "vulnerabilities_total": {
+        "Critical": 0,
+        "High": 1010,
+        "Medium": 31876,
+        "Low": 15279,
+        "Negligible": 53,
+        "Unknown": 147
+      },
+      "distro": "centos 9",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-9-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-9-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-9-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-9-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "debian",
+      "version": "12",
+      "build_date": "2026-11-01T15:44:32Z",
+      "date": "20261101",
+      "file": "debian-12-20261101.qcow2",
+      "size_bytes": 286457856,
+      "sha256": "616b211632f7439c321f72a8ee8f8a9700703245b5266f0bbb82c35d1d4d5866",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 0,
+        "High": 0,
+        "Medium": 0,
+        "Low": 0,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "vulnerabilities_total": {
+        "Critical": 36,
+        "High": 316,
+        "Medium": 386,
+        "Low": 66,
+        "Negligible": 419,
+        "Unknown": 106
+      },
+      "distro": "debian 12.15",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-12-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-12-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-12-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-12-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "debian",
+      "version": "13",
+      "build_date": "2026-11-01T14:53:27Z",
+      "date": "20261101",
+      "file": "debian-13-20261101.qcow2",
+      "size_bytes": 274595840,
+      "sha256": "ba1fe275e418401857f8dc213cef6386679f50f8953a9e2a5776c7860cbf2dbc",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 0,
+        "High": 96,
+        "Medium": 60,
+        "Low": 4,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "vulnerabilities_total": {
+        "Critical": 27,
+        "High": 315,
+        "Medium": 332,
+        "Low": 69,
+        "Negligible": 249,
+        "Unknown": 28
+      },
+      "distro": "debian 13.7",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-13-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-13-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-13-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-13-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "fedora",
+      "version": "43",
+      "build_date": "2026-11-01T15:14:05Z",
+      "date": "20261101",
+      "file": "fedora-43-20261101.qcow2",
+      "size_bytes": 668991488,
+      "sha256": "3c48f4c7c146667e0f0d725e68ba65923b3a56f1dde9c1fe48e4dc3b211f4185",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 5,
+        "High": 23,
+        "Medium": 27,
+        "Low": 2,
+        "Negligible": 0,
+        "Unknown": 3
+      },
+      "vulnerabilities_total": {
+        "Critical": 5,
+        "High": 32,
+        "Medium": 30,
+        "Low": 2,
+        "Negligible": 0,
+        "Unknown": 3
+      },
+      "distro": "fedora 43",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-43-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-43-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-43-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-43-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "fedora",
+      "version": "44",
+      "build_date": "2026-11-01T15:08:01Z",
+      "date": "20261101",
+      "file": "fedora-44-20261101.qcow2",
+      "size_bytes": 644284416,
+      "sha256": "b4afc2619666b889304a3a72ff133b8d19e69ce092ce6262d25012e6e548d672",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 5,
+        "High": 28,
+        "Medium": 26,
+        "Low": 1,
+        "Negligible": 0,
+        "Unknown": 3
+      },
+      "vulnerabilities_total": {
+        "Critical": 5,
+        "High": 37,
+        "Medium": 29,
+        "Low": 1,
+        "Negligible": 0,
+        "Unknown": 3
+      },
+      "distro": "fedora 44",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-44-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-44-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-44-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-44-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "freebsd",
+      "version": "14.5",
+      "build_date": "2026-11-01T13:12:42Z",
+      "date": "20261101",
+      "file": "freebsd-14.5-20261101.qcow2",
+      "size_bytes": 1465384960,
+      "sha256": "54ab5434bfa591c94b292985000453cf84f84178f008e69c3761a5329f965e6d",
+      "test": "pass",
+      "test_summary": "26 of 26 passed",
+      "vulnerabilities": null,
+      "vulnerabilities_total": null,
+      "distro": null,
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/freebsd-14.5-20261101.qcow2",
+        "sbom": null,
+        "vulnerabilities": null,
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/freebsd-14.5-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "freebsd",
+      "version": "15.1",
+      "build_date": "2026-11-01T15:57:49Z",
+      "date": "20261101",
+      "file": "freebsd-15.1-20261101.qcow2",
+      "size_bytes": 1240727552,
+      "sha256": "b881e03e6f26ab80a22c60734395f4e863dd22c3eaa90333e7bcaa23ee74ab00",
+      "test": "pass",
+      "test_summary": "26 of 26 passed",
+      "vulnerabilities": null,
+      "vulnerabilities_total": null,
+      "distro": null,
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/freebsd-15.1-20261101.qcow2",
+        "sbom": null,
+        "vulnerabilities": null,
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/freebsd-15.1-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "opensuse-leap",
+      "version": "16.0",
+      "build_date": "2026-11-01T15:53:49Z",
+      "date": "20261101",
+      "file": "opensuse-leap-16.0-20261101.qcow2",
+      "size_bytes": 409202688,
+      "sha256": "56d4e1146e77f7acef989da984112750887392fed17b3296c99d5d918d3786e3",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 10,
+        "High": 77,
+        "Medium": 34,
+        "Low": 5,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "vulnerabilities_total": {
+        "Critical": 10,
+        "High": 77,
+        "Medium": 35,
+        "Low": 6,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "distro": "opensuseleap 16.0",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/opensuse-leap-16.0-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/opensuse-leap-16.0-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/opensuse-leap-16.0-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/opensuse-leap-16.0-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "rocky",
+      "version": "10",
+      "build_date": "2026-11-03T07:04:59Z",
+      "date": "20261103",
+      "file": "rocky-10-20261103.qcow2",
+      "size_bytes": 752877568,
+      "sha256": "49053116e1f1bffa42aeff671e6337b4c8b1e0fc80a37e930ae8f8f9eca5ba4b",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 0,
+        "High": 2,
+        "Medium": 9,
+        "Low": 2,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "vulnerabilities_total": {
+        "Critical": 0,
+        "High": 615,
+        "Medium": 16514,
+        "Low": 6597,
+        "Negligible": 12,
+        "Unknown": 72
+      },
+      "distro": "rockylinux 10.2",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-10-20261103.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-10-20261103.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-10-20261103.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-10-20261103.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "rocky",
+      "version": "8",
+      "build_date": "2026-11-01T15:08:01Z",
+      "date": "20261101",
+      "file": "rocky-8-20261101.qcow2",
+      "size_bytes": 1765539840,
+      "sha256": "57dac6c7f33b1f1f70a05385106e26e447d2929de5f4a253f162a67d1b9be5c0",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 8,
+        "High": 38,
+        "Medium": 28,
+        "Low": 8,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "vulnerabilities_total": {
+        "Critical": 8,
+        "High": 630,
+        "Medium": 21048,
+        "Low": 10080,
+        "Negligible": 49,
+        "Unknown": 151
+      },
+      "distro": "rockylinux 8.10",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-8-20261101.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-8-20261101.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-8-20261101.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-8-20261101.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    },
+    {
+      "os": "rocky",
+      "version": "9",
+      "build_date": "2026-11-03T06:59:14Z",
+      "date": "20261103",
+      "file": "rocky-9-20261103.qcow2",
+      "size_bytes": 803340288,
+      "sha256": "7d61dc4b36a0139d4e5a29058e8bffd332e55848c98db0601b16db99b6ae370e",
+      "test": "pass",
+      "test_summary": "29 of 29 passed",
+      "vulnerabilities": {
+        "Critical": 6,
+        "High": 68,
+        "Medium": 48,
+        "Low": 2,
+        "Negligible": 0,
+        "Unknown": 0
+      },
+      "vulnerabilities_total": {
+        "Critical": 6,
+        "High": 908,
+        "Medium": 27330,
+        "Low": 13166,
+        "Negligible": 47,
+        "Unknown": 126
+      },
+      "distro": "rockylinux 9.8",
+      "links": {
+        "download": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-9-20261103.qcow2",
+        "sbom": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-9-20261103.spdx.json",
+        "vulnerabilities": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-9-20261103.vulns.json",
+        "changes": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-9-20261103.changes.txt",
+        "checksums": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS",
+        "signature": "https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"
+      }
+    }
+  ]
+}

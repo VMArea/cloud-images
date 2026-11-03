@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cloud images | VMArea</title>
+<meta name="description" content="Tested, signed cloud images for KVM and QEMU with cloud-init. Rebuilt every month.">
+<meta property="og:title" content="VMArea cloud images">
+<meta property="og:description" content="Tested, signed cloud images for KVM and QEMU with cloud-init. Rebuilt every month.">
+<meta property="og:image" content="https://raw.githubusercontent.com/VMArea/cloud-images/main/.github/assets/social-preview.png">
+<link rel="preload" href="fonts/BricolageGrotesque-700.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+@font-face{font-family:"Bricolage Grotesque";src:url(fonts/BricolageGrotesque-700.woff2) format("woff2");font-weight:700;font-display:swap}
+@font-face{font-family:"Be Vietnam Pro";src:url(fonts/BeVietnamPro-400.woff2) format("woff2");font-weight:400;font-display:swap}
+@font-face{font-family:"Be Vietnam Pro";src:url(fonts/BeVietnamPro-500.woff2) format("woff2");font-weight:500;font-display:swap}
+@font-face{font-family:"Be Vietnam Pro";src:url(fonts/BeVietnamPro-600.woff2) format("woff2");font-weight:600;font-display:swap}
+@font-face{font-family:"Geist Mono";src:url(fonts/GeistMono.woff2) format("woff2");font-weight:100 900;font-display:swap}
+:root{
+  --bg:oklch(0.163 0.014 186);--card:oklch(0.203 0.016 186);--fg:oklch(0.968 0.004 180);
+  --mut:oklch(0.735 0.018 190);--line:oklch(1 0 0 / 11%);--line-strong:oklch(1 0 0 / 18%);
+  --pri:oklch(0.755 0.145 162);--pri-hover:oklch(0.8 0.14 162);--pri-fg:oklch(0.175 0.035 168);
+  --warn:oklch(0.83 0.12 80);
+  --display:"Bricolage Grotesque",system-ui,sans-serif;--sans:"Be Vietnam Pro",system-ui,sans-serif;--mono:"Geist Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+html{color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 var(--sans);-webkit-font-smoothing:antialiased}
+a{color:var(--pri);text-decoration:none}
+a:hover{text-decoration:underline;text-underline-offset:3px}
+:focus-visible{outline:2px solid var(--pri);outline-offset:2px;border-radius:6px}
+.wrap{max-width:1040px;margin:0 auto;padding:0 clamp(20px,4vw,40px)}
+.nav{border-bottom:1px solid var(--line)}
+.nav .wrap{display:flex;align-items:center;gap:24px;height:60px}
+.brand{display:flex;align-items:center;gap:9px;font:700 16px var(--display);color:var(--fg)}
+.brand:hover{text-decoration:none}
+.crumb{color:var(--mut);font-weight:500;font-size:14px}
+.nav .sp{flex:1}
+.nav .l{color:var(--mut);font-weight:500;font-size:14px}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:6px;font:600 14px var(--sans);padding:8px 14px;border:1px solid transparent;cursor:pointer;white-space:nowrap}
+.btn:hover{text-decoration:none}
+.btn-pri{background:var(--pri);color:var(--pri-fg)}
+.btn-pri:hover{background:var(--pri-hover)}
+.btn-out{background:transparent;color:var(--fg);border-color:var(--line-strong)}
+.btn-lg{font-size:15px;padding:11px 20px}
+h1,h2{font-family:var(--display);font-weight:700;letter-spacing:-.025em;line-height:1.05;margin:0;text-wrap:balance}
+h1{font-size:clamp(36px,6vw,58px)}
+h2{font-size:clamp(26px,3.4vw,34px)}
+.m{color:var(--mut)}
+.hero{padding:clamp(48px,9vw,88px) 0 clamp(28px,5vw,40px)}
+.lead{color:var(--mut);font-size:17px;margin:16px 0 0;max-width:60ch}
+.pick{display:flex;flex-wrap:wrap;gap:8px}
+.chip{appearance:none;border:1px solid var(--line-strong);background:transparent;color:var(--fg);font:500 14px var(--sans);padding:8px 15px;border-radius:999px;cursor:pointer;transition:background-color .2s cubic-bezier(.25,1,.5,1),border-color .2s}
+.chip:hover{border-color:var(--pri)}
+.chip[aria-pressed=true]{background:var(--pri);border-color:var(--pri);color:var(--pri-fg)}
+.chip.v{font:500 13px var(--mono);padding:5px 13px}
+.versions{margin-top:12px}
+.panel{margin-top:24px;border:1px solid var(--line);border-radius:14px;background:var(--card);padding:clamp(22px,4vw,34px)}
+.panel.swap{animation:swap .35s cubic-bezier(.25,1,.5,1)}
+@keyframes swap{from{opacity:.35;transform:translateY(4px)}to{opacity:1;transform:none}}
+.head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:20px}
+.sub{margin:6px 0 0;color:var(--mut);font:13px var(--mono)}
+details{margin-top:26px;border-top:1px solid var(--line);padding-top:18px}
+summary{cursor:pointer;color:var(--mut);font-weight:500;font-size:14px;list-style:none;display:inline-flex;align-items:center;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary::before{content:"";width:7px;height:7px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(-45deg);transition:transform .2s}
+details[open] summary::before{transform:rotate(45deg)}
+summary:hover{color:var(--fg)}
+dl{margin:14px 0 0}
+dl div{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;padding:12px 0;border-bottom:1px solid var(--line);align-items:baseline}
+dl div:last-child{border-bottom:0}
+dt{color:var(--mut);font-size:14px}
+dd{margin:0;font-size:15px;min-width:0}
+.mono{font:13px var(--mono)}
+.ok{color:var(--pri)}.warn{color:var(--warn)}
+.hint{color:var(--mut);font-size:13px;display:block;margin-top:2px}
+.hash{display:flex;align-items:center;gap:12px}
+.hash code{font:13px var(--mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.files{display:flex;flex-wrap:wrap;gap:4px 18px}
+.copy{appearance:none;background:none;border:0;color:var(--pri);font:500 13px var(--sans);padding:0;cursor:pointer;flex:none}
+.copy:hover{text-decoration:underline}
+.foot{margin-top:72px;border-top:1px solid var(--line);padding:22px 0 48px;color:var(--mut);font-size:13px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px 24px}
+noscript ul{line-height:2}
+@media (max-width:720px){dl div{grid-template-columns:1fr;gap:4px}.nav .crumb{display:none}.nav .wrap{gap:16px}}
+@media (prefers-reduced-motion:reduce){.panel.swap{animation:none}.chip,summary::before{transition:none}}
+</style>
+</head>
+<body>
+<header class="nav"><div class="wrap">
+  <a class="brand" href="https://vmarea.com"><svg viewBox="0 0 690 704" width="22" height="22" aria-hidden="true"><defs><linearGradient id="lg" x1="0" y1="0" x2="0" y2="704" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#1a838c"/><stop offset="1" stop-color="#0c6974"/></linearGradient></defs><g fill="url(#lg)"><polygon points="192,286 326,351 326,698 192,698"/><polygon points="360,386 678,544 678,695 359,544"/><polygon points="360,12 492,12 492,417 359,353"/><polygon points="14,13 326,170 326,319 13,168"/><polygon points="527,254 677,329 678,444 527,445"/><polygon points="13,268 160,268 160,450 13,380"/></g></svg>VMArea</a>
+  <span class="crumb">Cloud images</span>
+  <span class="sp"></span>
+  <a class="l" href="https://github.com/VMArea/cloud-images">GitHub</a>
+  <a class="btn btn-out" href="https://vmarea.com">vmarea.com</a>
+</div></header>
+<main class="wrap">
+  <section class="hero">
+    <h1>Pick an image. <span class="m">Boot it anywhere KVM runs.</span></h1>
+    <p class="lead">Official distro images with cloud-init. Tested, signed and rebuilt every month.</p>
+  </section>
+  <div class="pick" id="os" role="group" aria-label="Operating system"></div>
+  <div class="pick versions" id="ver" role="group" aria-label="Version"></div>
+  <section class="panel" id="panel" aria-live="polite"></section>
+  <noscript><ul id="all"><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-10-20261101.qcow2">almalinux-10-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-8-20261101.qcow2">almalinux-8-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-9-20261101.qcow2">almalinux-9-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/arch-rolling-20261101.qcow2">arch-rolling-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-10-20261101.qcow2">centos-stream-10-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-9-20261101.qcow2">centos-stream-9-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-12-20261101.qcow2">debian-12-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-13-20261101.qcow2">debian-13-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-43-20261101.qcow2">fedora-43-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-44-20261101.qcow2">fedora-44-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/freebsd-14.5-20261101.qcow2">freebsd-14.5-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/freebsd-15.1-20261101.qcow2">freebsd-15.1-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/opensuse-leap-16.0-20261101.qcow2">opensuse-leap-16.0-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-10-20261103.qcow2">rocky-10-20261103.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-8-20261101.qcow2">rocky-8-20261101.qcow2</a></li><li><a href="https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-9-20261103.qcow2">rocky-9-20261103.qcow2</a></li></ul></noscript>
+  <footer class="foot">
+    <span id="rel"></span>
+    <span><a href="https://github.com/VMArea/cloud-images">Source on GitHub</a> &middot; MIT licence</span>
+  </footer>
+</main>
+<script type="application/json" id="data">{"release":"2026.11.03","generated":"2026-11-03 11:50 UTC","images":[{"os":"almalinux","version":"10","build_date":"2026-11-01T15:47:02Z","date":"20261101","file":"almalinux-10-20261101.qcow2","size_bytes":563806208,"sha256":"aa6e4bf6e0a70e778ffe7175a39b6fdb66695aa1b4afc74d8f8601dd0b67e878","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":6,"High":110,"Medium":42,"Low":1,"Negligible":0,"Unknown":0},"vulnerabilities_total":{"Critical":6,"High":996,"Medium":24377,"Low":9691,"Negligible":18,"Unknown":108},"distro":"almalinux 10.2","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-10-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-10-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-10-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-10-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"almalinux","version":"8","build_date":"2026-11-01T15:45:21Z","date":"20261101","file":"almalinux-8-20261101.qcow2","size_bytes":1714094080,"sha256":"8b055ec6b39579a353e93c19229c36c46207d34315398fbb8dff1d5552f9199e","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":9,"High":38,"Medium":27,"Low":7,"Negligible":0,"Unknown":0},"vulnerabilities_total":{"Critical":9,"High":606,"Medium":20947,"Low":10046,"Negligible":49,"Unknown":150},"distro":"almalinux 8.10","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-8-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-8-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-8-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-8-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"almalinux","version":"9","build_date":"2026-11-01T14:53:27Z","date":"20261101","file":"almalinux-9-20261101.qcow2","size_bytes":539426816,"sha256":"5374d5ada8b3e00c77ae8b8c9bebb94063b24dde0d2da593650f1a70de443a95","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":6,"High":68,"Medium":48,"Low":2,"Negligible":0,"Unknown":0},"vulnerabilities_total":{"Critical":6,"High":887,"Medium":27234,"Low":13117,"Negligible":46,"Unknown":126},"distro":"almalinux 9.8","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-9-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-9-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-9-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/almalinux-9-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"arch","version":"rolling","build_date":"2026-11-01T15:56:08Z","date":"20261101","file":"arch-rolling-20261101.qcow2","size_bytes":597931520,"sha256":"da77590fc34824e71483b0714bfb655b3803bc9b843a06d58696a35648fdb93a","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":0,"High":0,"Medium":0,"Low":0,"Negligible":0,"Unknown":0},"vulnerabilities_total":{"Critical":0,"High":3,"Medium":6,"Low":2,"Negligible":0,"Unknown":0},"distro":"archlinux rolling","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/arch-rolling-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/arch-rolling-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/arch-rolling-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/arch-rolling-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"centos-stream","version":"10","build_date":"2026-11-01T15:52:33Z","date":"20261101","file":"centos-stream-10-20261101.qcow2","size_bytes":1058996224,"sha256":"0be344fea8b70a749c89859a646b0fc5b19426c418469dead5bc0433d30de23d","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":8,"High":80,"Medium":78,"Low":9,"Negligible":0,"Unknown":3},"vulnerabilities_total":{"Critical":8,"High":1143,"Medium":28624,"Low":11333,"Negligible":21,"Unknown":129},"distro":"centos 10","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-10-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-10-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-10-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-10-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"centos-stream","version":"9","build_date":"2026-11-01T15:18:54Z","date":"20261101","file":"centos-stream-9-20261101.qcow2","size_bytes":1330839552,"sha256":"bcfe9f56621c3fdc570b783e6a611aea182ff885d6c3d0d231010d61a1376c83","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":0,"High":41,"Medium":80,"Low":11,"Negligible":0,"Unknown":0},"vulnerabilities_total":{"Critical":0,"High":1010,"Medium":31876,"Low":15279,"Negligible":53,"Unknown":147},"distro":"centos 9","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-9-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-9-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-9-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/centos-stream-9-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"debian","version":"12","build_date":"2026-11-01T15:44:32Z","date":"20261101","file":"debian-12-20261101.qcow2","size_bytes":286457856,"sha256":"616b211632f7439c321f72a8ee8f8a9700703245b5266f0bbb82c35d1d4d5866","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":0,"High":0,"Medium":0,"Low":0,"Negligible":0,"Unknown":0},"vulnerabilities_total":{"Critical":36,"High":316,"Medium":386,"Low":66,"Negligible":419,"Unknown":106},"distro":"debian 12.15","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-12-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-12-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-12-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-12-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"debian","version":"13","build_date":"2026-11-01T14:53:27Z","date":"20261101","file":"debian-13-20261101.qcow2","size_bytes":274595840,"sha256":"ba1fe275e418401857f8dc213cef6386679f50f8953a9e2a5776c7860cbf2dbc","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":0,"High":96,"Medium":60,"Low":4,"Negligible":0,"Unknown":0},"vulnerabilities_total":{"Critical":27,"High":315,"Medium":332,"Low":69,"Negligible":249,"Unknown":28},"distro":"debian 13.7","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-13-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-13-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-13-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/debian-13-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"fedora","version":"43","build_date":"2026-11-01T15:14:05Z","date":"20261101","file":"fedora-43-20261101.qcow2","size_bytes":668991488,"sha256":"3c48f4c7c146667e0f0d725e68ba65923b3a56f1dde9c1fe48e4dc3b211f4185","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":5,"High":23,"Medium":27,"Low":2,"Negligible":0,"Unknown":3},"vulnerabilities_total":{"Critical":5,"High":32,"Medium":30,"Low":2,"Negligible":0,"Unknown":3},"distro":"fedora 43","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-43-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-43-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-43-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-43-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"fedora","version":"44","build_date":"2026-11-01T15:08:01Z","date":"20261101","file":"fedora-44-20261101.qcow2","size_bytes":644284416,"sha256":"b4afc2619666b889304a3a72ff133b8d19e69ce092ce6262d25012e6e548d672","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":5,"High":28,"Medium":26,"Low":1,"Negligible":0,"Unknown":3},"vulnerabilities_total":{"Critical":5,"High":37,"Medium":29,"Low":1,"Negligible":0,"Unknown":3},"distro":"fedora 44","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-44-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-44-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-44-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/fedora-44-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"freebsd","version":"14.5","build_date":"2026-11-01T13:12:42Z","date":"20261101","file":"freebsd-14.5-20261101.qcow2","size_bytes":1465384960,"sha256":"54ab5434bfa591c94b292985000453cf84f84178f008e69c3761a5329f965e6d","test":"pass","test_summary":"26 of 26 passed","vulnerabilities":null,"vulnerabilities_total":null,"distro":null,"links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/freebsd-14.5-20261101.qcow2","sbom":null,"vulnerabilities":null,"changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/freebsd-14.5-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"freebsd","version":"15.1","build_date":"2026-11-01T15:57:49Z","date":"20261101","file":"freebsd-15.1-20261101.qcow2","size_bytes":1240727552,"sha256":"b881e03e6f26ab80a22c60734395f4e863dd22c3eaa90333e7bcaa23ee74ab00","test":"pass","test_summary":"26 of 26 passed","vulnerabilities":null,"vulnerabilities_total":null,"distro":null,"links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/freebsd-15.1-20261101.qcow2","sbom":null,"vulnerabilities":null,"changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/freebsd-15.1-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"opensuse-leap","version":"16.0","build_date":"2026-11-01T15:53:49Z","date":"20261101","file":"opensuse-leap-16.0-20261101.qcow2","size_bytes":409202688,"sha256":"56d4e1146e77f7acef989da984112750887392fed17b3296c99d5d918d3786e3","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":10,"High":77,"Medium":34,"Low":5,"Negligible":0,"Unknown":0},"vulnerabilities_total":{"Critical":10,"High":77,"Medium":35,"Low":6,"Negligible":0,"Unknown":0},"distro":"opensuseleap 16.0","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/opensuse-leap-16.0-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/opensuse-leap-16.0-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/opensuse-leap-16.0-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/opensuse-leap-16.0-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"rocky","version":"10","build_date":"2026-11-03T07:04:59Z","date":"20261103","file":"rocky-10-20261103.qcow2","size_bytes":752877568,"sha256":"49053116e1f1bffa42aeff671e6337b4c8b1e0fc80a37e930ae8f8f9eca5ba4b","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":0,"High":2,"Medium":9,"Low":2,"Negligible":0,"Unknown":0},"vulnerabilities_total":{"Critical":0,"High":615,"Medium":16514,"Low":6597,"Negligible":12,"Unknown":72},"distro":"rockylinux 10.2","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-10-20261103.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-10-20261103.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-10-20261103.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-10-20261103.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"rocky","version":"8","build_date":"2026-11-01T15:08:01Z","date":"20261101","file":"rocky-8-20261101.qcow2","size_bytes":1765539840,"sha256":"57dac6c7f33b1f1f70a05385106e26e447d2929de5f4a253f162a67d1b9be5c0","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":8,"High":38,"Medium":28,"Low":8,"Negligible":0,"Unknown":0},"vulnerabilities_total":{"Critical":8,"High":630,"Medium":21048,"Low":10080,"Negligible":49,"Unknown":151},"distro":"rockylinux 8.10","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-8-20261101.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-8-20261101.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-8-20261101.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-8-20261101.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}},{"os":"rocky","version":"9","build_date":"2026-11-03T06:59:14Z","date":"20261103","file":"rocky-9-20261103.qcow2","size_bytes":803340288,"sha256":"7d61dc4b36a0139d4e5a29058e8bffd332e55848c98db0601b16db99b6ae370e","test":"pass","test_summary":"29 of 29 passed","vulnerabilities":{"Critical":6,"High":68,"Medium":48,"Low":2,"Negligible":0,"Unknown":0},"vulnerabilities_total":{"Critical":6,"High":908,"Medium":27330,"Low":13166,"Negligible":47,"Unknown":126},"distro":"rockylinux 9.8","links":{"download":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-9-20261103.qcow2","sbom":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-9-20261103.spdx.json","vulnerabilities":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-9-20261103.vulns.json","changes":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/rocky-9-20261103.changes.txt","checksums":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS","signature":"https://github.com/VMArea/cloud-images/releases/download/2026.11.03/SHA256SUMS.sig"}}]}</script>
+<script>
+(function () {
+  var data = JSON.parse(document.getElementById("data").textContent);
+  var names = {"almalinux":"AlmaLinux","arch":"Arch Linux","centos-stream":"CentOS Stream","debian":"Debian","fedora":"Fedora","freebsd":"FreeBSD","opensuse-leap":"openSUSE Leap","rocky":"Rocky Linux"};
+  var byOs = {};
+  data.images.forEach(function (r) { (byOs[r.os] = byOs[r.os] || []).push(r); });
+  var vnum = function (v) { return v.split(".").map(function (x) { return parseInt(x, 10) || 0; }); };
+  var cmp = function (a, b) { var x = vnum(a.version), y = vnum(b.version); for (var i = 0; i < Math.max(x.length, y.length); i++) { var d = (y[i] || 0) - (x[i] || 0); if (d) return d; } return 0; };
+  var oses = Object.keys(byOs).sort(function (a, b) { return (names[a] || a).localeCompare(names[b] || b); });
+  oses.forEach(function (o) { byOs[o].sort(cmp); });
+  var el = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s).replace(/[&<>"]/g, function (c) { return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]; }); };
+  var size = function (n) { return n < 1073741824 ? Math.round(n / 1048576) + " MB" : (n / 1073741824).toFixed(1) + " GB"; };
+  var day = function (s) { var d = new Date(s.slice(0, 10) + "T00:00:00Z"); return d.toLocaleDateString("en-GB", {day: "numeric", month: "long", year: "numeric", timeZone: "UTC"}); };
+  var label = function (o, r) { return (names[o] || o) + " " + r.version; };
+  var state = {os: null, ver: null};
+
+  function fixes(r) {
+    var v = r.vulnerabilities;
+    if (!v) return '<span class="m">Not scanned</span>';
+    var parts = [];
+    if (v.Critical) parts.push(v.Critical + " critical");
+    if (v.High) parts.push(v.High + " high");
+    return parts.length ? '<span class="warn">' + parts.join(", ") + "</span>" : '<span class="ok">None</span>';
+  }
+
+  function chips(box, items, active, onPick, cls) {
+    box.innerHTML = "";
+    items.forEach(function (it) {
+      var b = document.createElement("button");
+      b.type = "button"; b.className = "chip" + (cls ? " " + cls : ""); b.textContent = it.text;
+      b.setAttribute("aria-pressed", it.key === active ? "true" : "false");
+      b.addEventListener("click", function () { onPick(it.key); });
+      box.appendChild(b);
+    });
+  }
+
+  function render(animate) {
+    var list = byOs[state.os];
+    var r = list.filter(function (x) { return x.version === state.ver; })[0] || list[0];
+    state.ver = r.version;
+    chips(el("os"), oses.map(function (o) { return {key: o, text: names[o] || o}; }), state.os, function (k) { state.os = k; state.ver = null; go(); });
+    chips(el("ver"), list.map(function (x) { return {key: x.version, text: x.version}; }), state.ver, function (k) { state.ver = k; go(); }, "v");
+    var L = r.links, files = [["SHA256SUMS", L.checksums], ["Signature", L.signature], ["SBOM", L.sbom], ["Scan report", L.vulnerabilities], ["Changes", L.changes]];
+    var row = function (k, v) { return "<div><dt>" + k + "</dt><dd>" + v + "</dd></div>"; };
+    var p = el("panel");
+    p.innerHTML =
+      '<div class="head"><div><h2>' + esc(label(state.os, r)) + '</h2><p class="sub">qcow2, ' + size(r.size_bytes) + "</p></div>" +
+      '<a class="btn btn-pri btn-lg" href="' + esc(L.download) + '">Download</a></div>' +
+      "<details" + (state.open ? " open" : "") + "><summary>" + (state.open ? "Hide" : "Show") + " details</summary><dl>" +
+      row("Built", day(r.build_date)) +
+      row("Tests", r.test === "pass" ? '<span class="ok">' + esc(r.test_summary || "Passed") + "</span>" : '<span class="warn">' + esc(r.test) + "</span>") +
+      row("Security fixes", fixes(r) + '<span class="hint">Released after this build, installed on first boot.</span>') +
+      (r.sha256 ? row("SHA-256", '<span class="hash"><code title="' + esc(r.sha256) + '">' + esc(r.sha256) + '</code><button class="copy" type="button">Copy</button></span>') : "") +
+      row("Files", '<span class="files">' + files.filter(function (f) { return f[1]; }).map(function (f) { return '<a href="' + esc(f[1]) + '">' + f[0] + "</a>"; }).join("") + "</span>") +
+      "</dl></details>";
+    var d = p.querySelector("details");
+    d.addEventListener("toggle", function () { state.open = d.open; d.querySelector("summary").textContent = (d.open ? "Hide" : "Show") + " details"; });
+    var cp = p.querySelector(".copy");
+    if (cp) cp.addEventListener("click", function (ev) {
+      var btn = ev.currentTarget;
+      navigator.clipboard.writeText(r.sha256).then(function () { btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1500); });
+    });
+    if (animate) { p.classList.remove("swap"); void p.offsetWidth; p.classList.add("swap"); }
+    var h = "#" + state.os + "-" + state.ver;
+    if (location.hash !== h) history.replaceState(null, "", h);
+    document.title = label(state.os, r) + " | VMArea cloud images";
+  }
+
+  function go() { render(true); }
+
+  function fromHash() {
+    var h = decodeURIComponent(location.hash.slice(1));
+    for (var i = 0; i < oses.length; i++) {
+      var o = oses[i];
+      if (h.indexOf(o + "-") === 0) { var v = h.slice(o.length + 1); if (byOs[o].some(function (x) { return x.version === v; })) return {os: o, ver: v}; }
+    }
+    return {os: byOs.debian ? "debian" : oses[0], ver: null};
+  }
+
+  state = fromHash();
+  render(false);
+  window.addEventListener("hashchange", function () { var o = state.open; state = fromHash(); state.open = o; render(true); });
+  el("rel").textContent = "Release " + data.release;
+})();
+</script>
+</body>
+</html>
