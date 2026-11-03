@@ -3,6 +3,6 @@ almalinux
 rocky
 centos-stream
 fedora
-opensuse
+opensuse-leap
 arch
 freebsd

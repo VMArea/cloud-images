@@ -68,7 +68,9 @@ if gh release view "$RELEASE_TAG" --repo "$repo" >/dev/null 2>&1; then
 else
   gh release create "$RELEASE_TAG" --repo "$repo" --title "Cloud images $RELEASE_TAG" --notes-file "$work/notes.md" --latest >/dev/null
 fi
+existing=$(gh release view "$RELEASE_TAG" --repo "$repo" --json assets --jq '.assets[] | "\(.name) \(.size)"')
 for f in "$assets"/*; do
+  if grep -qxF "$(basename "$f") $(stat -c %s "$f")" <<<"$existing"; then echo "already uploaded: $(basename "$f")"; continue; fi
   for try in 1 2 3; do
     gh release upload "$RELEASE_TAG" "$f" --repo "$repo" --clobber && break
     [ "$try" = 3 ] && die "upload failed: $(basename "$f")"
