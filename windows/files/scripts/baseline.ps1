@@ -58,5 +58,25 @@ if (Test-Path $chrome) {
         Set-Content "$chrome\$n" '{"distribution":{"do_not_create_desktop_shortcut":true,"do_not_create_quick_launch_shortcut":true,"do_not_create_taskbar_shortcut":true}}' -Encoding ASCII
     }
 }
+$trimDir = 'C:\ProgramData\VMArea'
+New-Item -ItemType Directory -Path $trimDir -Force | Out-Null
+Set-Content -Path "$trimDir\memory-trim.ps1" -Encoding UTF8 -Value @'
+$os = Get-CimInstance Win32_OperatingSystem
+$free = $os.FreePhysicalMemory * 1KB
+$keep = [math]::Max(512MB, $os.TotalVisibleMemorySize * 1KB * 0.05)
+$chunks = [math]::Floor(($free - $keep) / 256MB)
+if ($chunks -lt 4) { exit 0 }
+$held = New-Object System.Collections.Generic.List[byte[]]
+for ($c = 0; $c -lt $chunks; $c++) {
+    try { $a = [byte[]]::new(256MB) } catch { break }
+    for ($o = 0; $o -lt $a.Length; $o += 4096) { $a[$o] = 0 }
+    $held.Add($a)
+}
+exit 0
+'@
+$action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File $trimDir\memory-trim.ps1"
+$trigger = New-ScheduledTaskTrigger -Daily -At '01:00' -RandomDelay (New-TimeSpan -Hours 4)
+$settings = New-ScheduledTaskSettingsSet -Priority 7 -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -StartWhenAvailable -DontStopIfGoingOnBatteries -AllowStartIfOnBatteries
+Register-ScheduledTask -TaskName 'VMArea Memory Trim' -TaskPath '\VMArea\' -Action $action -Trigger $trigger -Settings $settings -User 'SYSTEM' -RunLevel Highest -Description 'Zeroes free memory once a day so the host can reclaim it. Safe to disable.' -Force | Out-Null
 Write-Output 'baseline applied'
 exit 0
